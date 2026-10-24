@@ -165,7 +165,7 @@ export class PdfLayout {
   }
   maxTextWidth(indent=0){ return this.width-this.margin*2-indent; }
   currentPageIndex(){ return this.pages.length; }
-  hasImageSource(label){ return Boolean(label&&this.imageSources.has(label)); }
+  hasImageSource(label,cover=false){ return Boolean(label&&this.imageSources.has(`${cover?'cover':'image'}:${label}`)); }
   measure(text,size){this.ctx.font=`${size}px EPUBStudioMing`;return this.ctx.measureText(text).width;}
   ensure(required=20) { if(this.cursor-required < this.margin+(this.opts.pageNumbers?12:0)) this.nextPage(); }
   nextPage() {
@@ -234,8 +234,34 @@ export class PdfLayout {
     const tokens=text.match(/\n|[\t ]+|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[^\n\t \p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu)||[];
     return tokens.map(s=>({...run,text:s==='\t'?'    ':s}));
   }
-  async drawImage(bytes,media,label='') {
-    let image=label?this.imageSources.get(label):null;
+  trimCoverWhitespace(canvas){
+    try{
+      const width=canvas.width,height=canvas.height;
+      const data=canvas.getContext('2d').getImageData(0,0,width,height).data;
+      let minX=width,minY=height,maxX=-1,maxY=-1;
+      for(let y=0;y<height;y+=2){
+        for(let x=0;x<width;x+=2){
+          const offset=(y*width+x)*4;
+          if(data[offset]<248||data[offset+1]<248||data[offset+2]<248){
+            minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+          }
+        }
+      }
+      if(maxX<0)return canvas;
+      const padX=Math.ceil(width*.015),padY=Math.ceil(height*.015);
+      let left=0,right=width,top=0,bottom=height;
+      if(minX>=width*.08&&width-1-maxX>=width*.08){left=Math.max(0,minX-padX);right=Math.min(width,maxX+padX+1);}
+      if(minY>=height*.08&&height-1-maxY>=height*.08){top=Math.max(0,minY-padY);bottom=Math.min(height,maxY+padY+1);}
+      if(left===0&&right===width&&top===0&&bottom===height)return canvas;
+      const trimmed=document.createElement('canvas');
+      trimmed.width=right-left;trimmed.height=bottom-top;
+      trimmed.getContext('2d',{alpha:false}).drawImage(canvas,left,top,trimmed.width,trimmed.height,0,0,trimmed.width,trimmed.height);
+      return trimmed;
+    }catch{return canvas;}
+  }
+  async drawImage(bytes,media,label='',cover=false) {
+    const cacheKey=label?`${cover?'cover':'image'}:${label}`:'';
+    let image=cacheKey?this.imageSources.get(cacheKey):null;
     if(!image){
       const blob=new Blob([bytes],{type:media});
       let bitmap;
@@ -248,16 +274,27 @@ export class PdfLayout {
       const context=canvas.getContext('2d',{alpha:false});
       context.fillStyle='#ffffff';context.fillRect(0,0,canvas.width,canvas.height);
       context.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
-      const jpegBlob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.88));
+      const outputCanvas=cover?this.trimCoverWhitespace(canvas):canvas;
+      const jpegBlob=await new Promise(resolve=>outputCanvas.toBlob(resolve,'image/jpeg',.88));
       if(!jpegBlob)return false;
       const jpgBytes=new Uint8Array(await jpegBlob.arrayBuffer());
       const key=`Im${++this.imageSerial}`;
-      const imgRef=this.writer.stream(jpgBytes,`/Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`);
+      const imgRef=this.writer.stream(jpgBytes,`/Type /XObject /Subtype /Image /Width ${outputCanvas.width} /Height ${outputCanvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`);
       this.images.set(key,imgRef);
-      image={key,width:w,height:h};
-      if(label)this.imageSources.set(label,image);
+      image={key,width:cover?outputCanvas.width:w,height:cover?outputCanvas.height:h};
+      if(cacheKey)this.imageSources.set(cacheKey,image);
     }
     const {key,width:w,height:h}=image;
+    if(cover){
+      if(this.pageItems)this.nextPage();
+      const scale=Math.max(this.width/w,this.height/h);
+      const pw=w*scale,ph=h*scale;
+      const x=(this.width-pw)/2,y=(this.height-ph)/2;
+      this.usedImages.add(key);
+      this.ops.push(`q ${fmt(pw)} 0 0 ${fmt(ph)} ${fmt(x)} ${fmt(y)} cm /${key} Do Q`);
+      this.pageItems++;
+      return true;
+    }
     const maxWidth=Math.max(1,this.width-2*this.margin);
     const maxHeight=Math.max(1,this.height-2*this.margin-18);
     const scale=Math.min(maxWidth/w,maxHeight/h,1.6);

@@ -27,6 +27,7 @@ const parseMarkup=(xml,kind='application/xml')=>{
 };
 const cleanLabel=text=>(text||'').replace(/\s+/g,' ').trim();
 const directChildren=(node,name)=>Array.from(node?.children||[]).filter(el=>el.localName?.toLowerCase()===name.toLowerCase());
+const isCoverLabel=text=>/^(?:封面|封面頁|書封|封頁|cover(?:\s+page)?|jacket)$/i.test(cleanLabel(text));
 const escapeFile = name=>(name||'ebook').replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100).trim()||'ebook';
 
 function resolveBookmarkTarget(sourcePath,href){
@@ -141,6 +142,30 @@ export async function inspectEpub(file) {
     coverItem=manifest.get(coverId);
   }
   if(coverItem&&(!coverItem.path||!coverItem.media.startsWith('image/')))coverItem=null;
+  let coverPage=null;
+  const navCoverPaths=new Set(flattenBookmarks(navigation).filter(entry=>entry.path&&isCoverLabel(entry.title)).map(entry=>entry.path));
+  const coverCandidates=spine.filter((item,index)=>index===0||navCoverPaths.has(item.path));
+  for(const item of coverCandidates){
+    if(!/html|xhtml/.test(item.media))continue;
+    try{
+      const doc=parseMarkup(await zip.file(item.path).async('string'),'text/html');
+      const bodyType=doc.body?.getAttribute('epub:type')||doc.body?.getAttributeNS?.('http://www.idpf.org/2007/ops','type')||'';
+      const isCover=bodyType.split(/\s+/).includes('cover')||navCoverPaths.has(item.path);
+      if(!isCover)continue;
+      const image=getByLocal(doc,'img')[0]||getByLocal(doc,'image')[0];
+      const href=image?.getAttribute('src')||image?.getAttribute('href')||image?.getAttribute('xlink:href')||image?.getAttributeNS?.('http://www.w3.org/1999/xlink','href')||'';
+      if(!href)continue;
+      const imagePath=resolvePath(item.path,href);
+      if(!zip.file(imagePath))continue;
+      const manifestImage=[...manifest.values()].find(entry=>entry.path===imagePath);
+      const ext=(imagePath.split('.').pop()||'').toLowerCase();
+      const media=manifestImage?.media||({'jpg':'image/jpeg','jpeg':'image/jpeg','png':'image/png','webp':'image/webp','gif':'image/gif'}[ext]||'');
+      if(!media.startsWith('image/'))continue;
+      coverPage={path:item.path,imagePath,media};
+      if(!coverItem)coverItem=manifestImage||{path:imagePath,media};
+      break;
+    }catch{ /* keep the normal chapter conversion path if cover extraction is incomplete */ }
+  }
   let viewport=null;
   for(const item of spine.slice(0,5)){
     if(!(/html|xhtml/.test(item.media)))continue;
@@ -154,7 +179,7 @@ export async function inspectEpub(file) {
       if(width>=100&&height>=100&&width<14400&&height<14400){ viewport={width,height,pxWidth:Number(w),pxHeight:Number(h)};break; }
     }
   }
-  const info={title,author,language, fixedLayout,viewport,spine,manifest,coverItem,navigation,zip,opfPath,fileName:file.name};
+  const info={title,author,language, fixedLayout,viewport,spine,manifest,coverItem,coverPage,navigation,zip,opfPath,fileName:file.name};
   return info;
 }
 
@@ -284,14 +309,20 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
     for(const child of Array.from(node.children||[]))await drawNode(child,path,depth+1);
   };
   const cover=info.coverItem;
+  const coverPage=info.coverPage;
+  let coverPageRendered=false;
   const bookmarks=cloneBookmarkTree(info.navigation);
   const navigationEntries=flattenBookmarks(bookmarks);
   if(options.includeCover&&cover&&info.zip.file(cover.path)){
     try {
-      const coverPage=layout.currentPageIndex();
-      if(await layout.drawImage(layout.hasImageSource(cover.path)?null:await info.zip.file(cover.path).async('uint8array'),cover.media,cover.path)){
-        imageCount++;bookmarks.unshift({title:'封面',pageIndex:coverPage,children:[]});layout.nextPage();
-        for(const bookmark of navigationEntries)if(bookmark.path===cover.path&&bookmark.pageIndex==null)bookmark.pageIndex=coverPage;
+      const coverPageIndex=layout.currentPageIndex();
+      const coverPath=coverPage?.imagePath||cover.path;
+      const coverMedia=coverPage?.media||cover.media;
+      if(await layout.drawImage(layout.hasImageSource(coverPath,true)?null:await info.zip.file(coverPath).async('uint8array'),coverMedia,coverPath,true)){
+        imageCount++;coverPageRendered=Boolean(coverPage);
+        if(!coverPage||!navigationEntries.some(bookmark=>bookmark.path===coverPage.path))bookmarks.unshift({title:'封面',pageIndex:coverPageIndex,children:[]});
+        layout.nextPage();
+        for(const bookmark of navigationEntries)if((bookmark.path===cover.path||bookmark.path===coverPage?.path)&&bookmark.pageIndex==null)bookmark.pageIndex=coverPageIndex;
       }
     }
     catch(e){warnings.push(`封面無法加入：${e.message}`);}
@@ -299,6 +330,7 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
   let sections=0;
   for(const [index,item] of info.spine.entries()){
     onProgress(index/info.spine.length,`正在處理章節 ${index+1} / ${info.spine.length}`);
+    if(coverPage&&item.path===coverPage.path&&(!options.includeCover||coverPageRendered))continue;
     if(index>0)layout.beginChapter();
     const chapterPage=layout.currentPageIndex();
     for(const bookmark of navigationEntries)if(bookmark.path===item.path&&bookmark.pageIndex==null)bookmark.pageIndex=chapterPage;
