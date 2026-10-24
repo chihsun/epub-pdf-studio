@@ -30,6 +30,141 @@ const directChildren=(node,name)=>Array.from(node?.children||[]).filter(el=>el.l
 const isCoverLabel=text=>/^(?:封面|封面頁|書封|封頁|cover(?:\s+page)?|jacket)$/i.test(cleanLabel(text));
 const escapeFile = name=>(name||'ebook').replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100).trim()||'ebook';
 
+function splitCssSelectors(value){
+  const selectors=[];let start=0,depth=0,quote='';
+  for(let i=0;i<value.length;i++){
+    const char=value[i];
+    if(quote){if(char===quote&&value[i-1]!=='\\')quote='';continue;}
+    if(char==='"'||char==="'"){quote=char;continue;}
+    if(char==='('||char==='[')depth++;
+    else if(char===')'||char===']')depth=Math.max(0,depth-1);
+    else if(char===','&&depth===0){selectors.push(value.slice(start,i).trim());start=i+1;}
+  }
+  selectors.push(value.slice(start).trim());
+  return selectors.filter(Boolean);
+}
+
+function parseCssRules(css,output=[]){
+  const source=(css||'').replace(/^\uFEFF/,'').replace(/\/\*[\s\S]*?\*\//g,'');
+  let cursor=0;
+  while(cursor<source.length){
+    while(cursor<source.length&&/[\s;}]/.test(source[cursor]))cursor++;
+    let open=cursor,quote='';
+    for(;open<source.length;open++){
+      const char=source[open];
+      if(quote){if(char===quote&&source[open-1]!=='\\')quote='';continue;}
+      if(char==='"'||char==="'"){quote=char;continue;}
+      if(char==='{')break;
+    }
+    if(open>=source.length)break;
+    const prelude=source.slice(cursor,open).trim();
+    const selector=prelude.slice(prelude.lastIndexOf(';')+1).trim();
+    let end=open+1,depth=1;quote='';
+    for(;end<source.length&&depth;end++){
+      const char=source[end];
+      if(quote){if(char===quote&&source[end-1]!=='\\')quote='';continue;}
+      if(char==='"'||char==="'"){quote=char;continue;}
+      if(char==='{')depth++;
+      else if(char==='}')depth--;
+    }
+    if(depth)break;
+    const body=source.slice(open+1,end-1);
+    cursor=end;
+    if(!selector)continue;
+    if(selector.startsWith('@')){
+      if(/^@(media|supports|layer|container)\b/i.test(selector))parseCssRules(body,output);
+      continue;
+    }
+    output.push({selectors:splitCssSelectors(selector),declarations:body});
+  }
+  return output;
+}
+
+function declaredWritingMode(declarations){
+  const expression=/(?:^|;)\s*(?:-epub-writing-mode|-webkit-writing-mode|writing-mode)\s*:\s*([\w-]+)/gi;
+  let match,last=null;
+  while((match=expression.exec(declarations||'')))last=match[1].toLowerCase();
+  if(last==='tb-rl')return 'vertical-rl';
+  if(last==='tb-lr')return 'vertical-lr';
+  return ['vertical-rl','vertical-lr','horizontal-tb'].includes(last)?last:null;
+}
+const directionForWritingMode=mode=>mode==='vertical-rl'?'R2L':mode==='vertical-lr'?'L2R':null;
+
+function selectorMatches(selector,elements){
+  try{return elements.some(element=>element?.matches(selector));}catch{return false;}
+}
+
+async function detectWritingMode(item,zip,stylesheetCache){
+  const doc=parseMarkup(await zip.file(item.path).async('string'),'text/html');
+  const roots=[doc.documentElement,doc.body].filter(Boolean);
+  const totalText=doc.body?.textContent?.trim().length||0;
+  let rootMode=null,rootDeclared=false,contentMode=null,contentDeclared=false;
+  const styles=[];
+  for(const node of Array.from(doc.querySelectorAll('link[rel],style'))){
+    if(node.localName?.toLowerCase()==='style'){styles.push(node.textContent||'');continue;}
+    if(!(node.getAttribute('rel')||'').toLowerCase().split(/\s+/).includes('stylesheet'))continue;
+    const href=node.getAttribute('href');
+    if(!href)continue;
+    try{
+      const path=resolvePath(item.path,href);
+      if(!stylesheetCache.has(path)){
+        const entry=zip.file(path);
+        stylesheetCache.set(path,entry?await entry.async('string'):'');
+      }
+      styles.push(stylesheetCache.get(path));
+    }catch{ /* ignore unavailable or external stylesheets */ }
+  }
+  for(const stylesheet of styles){
+    for(const rule of parseCssRules(stylesheet)){
+      const mode=declaredWritingMode(rule.declarations);
+      if(!mode)continue;
+      if(rule.selectors.some(selector=>selectorMatches(selector,roots))){rootMode=mode;rootDeclared=true;continue;}
+      if(totalText<1)continue;
+      let matchedText=0;
+      for(const selector of rule.selectors){
+        try{
+          for(const element of doc.querySelectorAll(selector)){
+            if(element!==doc.documentElement&&element!==doc.body)matchedText+=element.textContent?.trim().length||0;
+          }
+        }catch{ /* ignore selectors unsupported by this browser */ }
+      }
+      if(matchedText>=totalText*.25){contentMode=mode;contentDeclared=true;}
+    }
+  }
+  for(const element of roots){
+    const mode=declaredWritingMode(element.getAttribute('style')||'');
+    if(mode){rootMode=mode;rootDeclared=true;}
+  }
+  if(totalText>0){
+    for(const element of doc.querySelectorAll('[style]')){
+      if(roots.includes(element))continue;
+      const mode=declaredWritingMode(element.getAttribute('style')||'');
+      if(mode&&(element.textContent?.trim().length||0)>=totalText*.25){contentMode=mode;contentDeclared=true;}
+    }
+  }
+  if(rootDeclared)return rootMode;
+  if(contentDeclared)return contentMode;
+  return null;
+}
+
+async function detectEpubDirection(spineEl,spine,zip){
+  const declared=(spineEl?.getAttribute('page-progression-direction')||'').trim().toLowerCase();
+  if(declared==='rtl')return {direction:'R2L',source:'EPUB 方向標記'};
+  if(declared==='ltr')return {direction:'L2R',source:'EPUB 方向標記'};
+  const stylesheetCache=new Map();
+  let checked=0;
+  for(const item of spine){
+    if(!/html|xhtml/.test(item.media))continue;
+    if(checked++>=12)break;
+    try{
+      const mode=await detectWritingMode(item,zip,stylesheetCache);
+      const direction=directionForWritingMode(mode);
+      if(direction)return {direction,source:mode==='vertical-rl'?'直排 CSS（vertical-rl）':'直排 CSS（vertical-lr）'};
+    }catch{ /* keep checking later spine items */ }
+  }
+  return {direction:null,source:null};
+}
+
 function resolveBookmarkTarget(sourcePath,href){
   if(!href)return null;
   try{
@@ -135,6 +270,7 @@ export async function inspectEpub(file) {
   const spine=getByLocal(spineEl,'itemref').map(item=>manifest.get(item.getAttribute('idref')))
     .filter(item=>item&&item.path&&(/xhtml\+xml|text\/html|image\//.test(item.media))&&zip.file(item.path));
   if(!spine.length)throw new Error('找不到可轉換的 EPUB 閱讀章節');
+  const epubDirection=await detectEpubDirection(spineEl,spine,zip);
   const navigation=await readNavigation(spineEl,manifest,zip);
   let coverItem=[...manifest.values()].find(item=>item.properties.split(/\s+/).includes('cover-image'));
   if(!coverItem){
@@ -179,7 +315,7 @@ export async function inspectEpub(file) {
       if(width>=100&&height>=100&&width<14400&&height<14400){ viewport={width,height,pxWidth:Number(w),pxHeight:Number(h)};break; }
     }
   }
-  const info={title,author,language, fixedLayout,viewport,spine,manifest,coverItem,coverPage,navigation,zip,opfPath,fileName:file.name};
+  const info={title,author,language, fixedLayout,viewport,spine,manifest,coverItem,coverPage,navigation,readingDirection:epubDirection.direction,readingDirectionSource:epubDirection.source,zip,opfPath,fileName:file.name};
   return info;
 }
 
@@ -364,7 +500,10 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
   if(layout.pageItems===0 && layout.pages.length===1 && sections===0 && imageCount===0)throw new Error('此 EPUB 沒有可輸出的文字或圖片');
   const resolvedBookmarks=resolvedBookmarkTree(bookmarks,pageCount);
   const bookmarkCount=countBookmarks(resolvedBookmarks);
-  const blob=finishPdf(writer,pagesId,info,pageIds,resolvedBookmarks);
+  const manualDirection=options.readingDirection==='rtl'?'R2L':options.readingDirection==='ltr'?'L2R':null;
+  const readingDirection=manualDirection||info.readingDirection||null;
+  const directionSource=manualDirection?'手動覆寫':info.readingDirectionSource;
+  const blob=finishPdf(writer,pagesId,info,pageIds,resolvedBookmarks,readingDirection);
   onProgress(1,'轉換完成');
-  return {blob,pageCount,sections,imageCount,bookmarkCount,warnings,fileName:`${escapeFile(info.title)}.pdf`,pageSize:[width,height]};
+  return {blob,pageCount,sections,imageCount,bookmarkCount,readingDirection,directionSource,warnings,fileName:`${escapeFile(info.title)}.pdf`,pageSize:[width,height]};
 }

@@ -345,7 +345,7 @@ function writeOutlineLevel(writer,nodes,parentId,pageIds){
 }
 const countOutlineDescendants=nodes=>(nodes||[]).reduce((total,node)=>total+1+countOutlineDescendants(node.children),0);
 
-export function finishPdf(writer,pagesId,metadata,pageIds=[],bookmarks=[]) {
+export function finishPdf(writer,pagesId,metadata,pageIds=[],bookmarks=[],readingDirection=null) {
   let outlinesRef='';
   if(bookmarks.length){
     const outlinesId=writer.reserve();
@@ -353,7 +353,8 @@ export function finishPdf(writer,pagesId,metadata,pageIds=[],bookmarks=[]) {
     writer.set(outlinesId,`<< /Type /Outlines /First ${itemIds[0]} 0 R /Last ${itemIds.at(-1)} 0 R /Count ${countOutlineDescendants(bookmarks)} >>`);
     outlinesRef=` /Outlines ${outlinesId} 0 R /PageMode /UseOutlines`;
   }
-  const root=writer.add(`<< /Type /Catalog /Pages ${pagesId} 0 R${outlinesRef} >>`);
+  const viewerPreferences=['L2R','R2L'].includes(readingDirection)?` /ViewerPreferences << /Direction /${readingDirection} >>`:'';
+  const root=writer.add(`<< /Type /Catalog /Pages ${pagesId} 0 R${outlinesRef}${viewerPreferences} >>`);
   const info=writer.add(`<< /Title ${pdfUnicodeString(metadata.title||'EPUB 轉 PDF')} /Author ${pdfUnicodeString(metadata.author||'')} /Creator (EPUB PDF Studio) /Producer (EPUB PDF Studio) >>`);
   return writer.build(root,info);
 }
