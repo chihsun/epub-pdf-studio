@@ -17,14 +17,89 @@ const resolvePath=(base,relative)=>{
   if(/^[a-z][a-z0-9+.-]*:/i.test(relative||'')) throw new Error('不支援 EPUB 外部資源');
   let decoded=stripHash(relative);
   try{decoded=decodeURIComponent(decoded);}catch{ /* preserve unmatched percent signs */ }
-  return normalizeZipPath(`${base.substring(0,base.lastIndexOf('/')+1)}${decoded}`);
+  const path=decoded.startsWith('/')?decoded:`${base.substring(0,base.lastIndexOf('/')+1)}${decoded}`;
+  return normalizeZipPath(path);
 };
 const parseMarkup=(xml,kind='application/xml')=>{
   const doc=new DOMParser().parseFromString(xml,kind);
   if(kind!=='text/html' && doc.getElementsByTagName('parsererror').length)throw new Error('EPUB XML 結構不正確');
   return doc;
 };
+const cleanLabel=text=>(text||'').replace(/\s+/g,' ').trim();
+const directChildren=(node,name)=>Array.from(node?.children||[]).filter(el=>el.localName?.toLowerCase()===name.toLowerCase());
 const escapeFile = name=>(name||'ebook').replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100).trim()||'ebook';
+
+function resolveBookmarkTarget(sourcePath,href){
+  if(!href)return null;
+  try{
+    const path=resolvePath(sourcePath,href);
+    const hash=href.indexOf('#');
+    let fragment=hash>=0?href.slice(hash+1).split('?')[0]:'';
+    try{fragment=decodeURIComponent(fragment);}catch{ /* retain an invalid encoded fragment */ }
+    return {path,fragment};
+  }catch{return null;}
+}
+
+function parseNavList(list,sourcePath){
+  return directChildren(list,'li').flatMap(li=>{
+    const children=Array.from(li.children||[]);
+    const label=children.find(el=>['a','span'].includes(el.localName?.toLowerCase()));
+    const nested=children.find(el=>['ol','ul'].includes(el.localName?.toLowerCase()));
+    const title=cleanLabel(label?.textContent);
+    const childEntries=nested?parseNavList(nested,sourcePath):[];
+    if(!title)return childEntries;
+    const target=resolveBookmarkTarget(sourcePath,label?.getAttribute('href')||'');
+    return [{title,...(target||{}),children:childEntries}];
+  });
+}
+
+async function readNavigation(spineEl,manifest,zip){
+  const navItem=[...manifest.values()].find(item=>item.properties.split(/\s+/).includes('nav'));
+  if(navItem?.path&&zip.file(navItem.path)){
+    try{
+      const doc=parseMarkup(await zip.file(navItem.path).async('string'),'text/html');
+      const navs=getByLocal(doc,'nav');
+      const toc=navs.find(nav=>{
+        const type=nav.getAttribute('epub:type')||nav.getAttributeNS?.('http://www.idpf.org/2007/ops','type')||'';
+        return type.split(/\s+/).includes('toc')||nav.getAttribute('role')==='doc-toc';
+      })||navs[0];
+      const list=Array.from(toc?.children||[]).find(el=>['ol','ul'].includes(el.localName?.toLowerCase()));
+      const entries=list?parseNavList(list,navItem.path):[];
+      if(entries.length)return entries;
+    }catch{ /* use the EPUB 2 NCX when the EPUB 3 navigation document is incomplete */ }
+  }
+
+  const tocId=spineEl?.getAttribute('toc');
+  const ncxItem=(tocId&&manifest.get(tocId))||[...manifest.values()].find(item=>item.media==='application/x-dtbncx+xml'||/\.ncx$/i.test(item.path||''));
+  if(!ncxItem?.path||!zip.file(ncxItem.path))return [];
+  try{
+    const doc=parseMarkup(await zip.file(ncxItem.path).async('string'));
+    const navMap=getByLocal(doc,'navMap')[0];
+    const parsePoints=parent=>directChildren(parent,'navPoint').flatMap(point=>{
+      const label=directChildren(point,'navLabel')[0];
+      const content=directChildren(point,'content')[0];
+      const title=cleanLabel(getByLocal(label,'text')[0]?.textContent);
+      const children=parsePoints(point);
+      if(!title)return children;
+      const target=resolveBookmarkTarget(ncxItem.path,content?.getAttribute('src')||'');
+      return [{title,...(target||{}),children}];
+    });
+    return navMap?parsePoints(navMap):[];
+  }catch{return [];}
+}
+
+const flattenBookmarks=nodes=>(nodes||[]).flatMap(node=>[node,...flattenBookmarks(node.children)]);
+const cloneBookmarkTree=nodes=>(nodes||[]).map(node=>({...node,children:cloneBookmarkTree(node.children)}));
+function resolvedBookmarkTree(nodes,pageCount){
+  return (nodes||[]).flatMap(node=>{
+    const children=resolvedBookmarkTree(node.children,pageCount);
+    let pageIndex=node.pageIndex;
+    if(!Number.isInteger(pageIndex)||pageIndex<0||pageIndex>=pageCount)pageIndex=children[0]?.pageIndex;
+    if(!Number.isInteger(pageIndex)||pageIndex<0||pageIndex>=pageCount)return children;
+    return [{title:cleanLabel(node.title)||'章節',pageIndex,children}];
+  });
+}
+const countBookmarks=nodes=>(nodes||[]).reduce((total,node)=>total+1+countBookmarks(node.children),0);
 
 export async function inspectEpub(file) {
   if(!file || !/\.epub$/i.test(file.name))throw new Error('請選擇副檔名為 .epub 的檔案');
@@ -59,12 +134,13 @@ export async function inspectEpub(file) {
   const spine=getByLocal(spineEl,'itemref').map(item=>manifest.get(item.getAttribute('idref')))
     .filter(item=>item&&item.path&&(/xhtml\+xml|text\/html|image\//.test(item.media))&&zip.file(item.path));
   if(!spine.length)throw new Error('找不到可轉換的 EPUB 閱讀章節');
+  const navigation=await readNavigation(spineEl,manifest,zip);
   let coverItem=[...manifest.values()].find(item=>item.properties.split(/\s+/).includes('cover-image'));
   if(!coverItem){
     const coverId=metadataProps.find(m=>m.getAttribute('name')==='cover')?.getAttribute('content');
     coverItem=manifest.get(coverId);
   }
-  if(coverItem&&!coverItem.media.startsWith('image/'))coverItem=null;
+  if(coverItem&&(!coverItem.path||!coverItem.media.startsWith('image/')))coverItem=null;
   let viewport=null;
   for(const item of spine.slice(0,5)){
     if(!(/html|xhtml/.test(item.media)))continue;
@@ -78,7 +154,7 @@ export async function inspectEpub(file) {
       if(width>=100&&height>=100&&width<14400&&height<14400){ viewport={width,height,pxWidth:Number(w),pxHeight:Number(h)};break; }
     }
   }
-  const info={title,author,language, fixedLayout,viewport,spine,manifest,coverItem,zip,opfPath,fileName:file.name};
+  const info={title,author,language, fixedLayout,viewport,spine,manifest,coverItem,navigation,zip,opfPath,fileName:file.name};
   return info;
 }
 
@@ -120,16 +196,28 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
     try{path=resolvePath(sourceBase,href);}catch{warnings.push('已略過外部圖片資源');return;}
     const entry=info.zip.file(path);
     if(!entry){warnings.push(`圖片不存在：${path}`);return;}
-    if(imageCount>=250){warnings.push('圖片超過 250 張，已略過其餘圖片');return;}
     const ext=(path.split('.').pop()||'').toLowerCase();
     const type=media||({'jpg':'image/jpeg','jpeg':'image/jpeg','png':'image/png','gif':'image/gif','webp':'image/webp','svg':'image/svg+xml'}[ext]||'');
     if(type==='image/svg+xml'||ext==='svg'){warnings.push(`SVG 圖片暫不支援：${path}`);return;}
-    try{await layout.drawImage(await entry.async('uint8array'),type,path);imageCount++;}
+    try{if(await layout.drawImage(layout.hasImageSource(path)?null:await entry.async('uint8array'),type,path))imageCount++;}
     catch(e){warnings.push(`無法繪製圖片 ${path}：${e.message}`);}
+  };
+  let activeBookmarkTargets=new Map();
+  layout.onAnchors=(ids,pageIndex)=>{
+    for(const id of ids)for(const bookmark of activeBookmarkTargets.get(id)||[])bookmark.pageIndex=pageIndex;
+  };
+  const bookmarkAnchorIds=node=>{
+    const id=node.getAttribute?.('id')||node.getAttribute?.('xml:id')||'';
+    return id&&activeBookmarkTargets.has(id)?[id]:[];
+  };
+  const markBookmarkTarget=node=>{
+    const id=node.getAttribute?.('id')||node.getAttribute?.('xml:id')||'';
+    if(id)for(const bookmark of activeBookmarkTargets.get(id)||[])bookmark.pageIndex=layout.currentPageIndex();
   };
   const drawNode=async(node,path,depth=0)=>{
     if(depth>55)return;
     if(node.nodeType!==Node.ELEMENT_NODE)return;
+    markBookmarkTarget(node);
     const tag=node.localName?.toLowerCase();
     if(SKIP.has(tag))return;
     if(tag==='img'||tag==='image'){
@@ -139,7 +227,7 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
     if(HEADINGS.has(tag)){
       const level=Number(tag.charAt(1));
       const runs=normalizedRuns(inlineRuns(node));
-      if(runs.length) layout.drawParagraph(runs,{bold:true,fontSize:Math.max(options.fontSize+1,options.fontSize+(7-level)*1.5),before:level<=2?12:7,after:7});
+      if(runs.length) layout.drawParagraph(runs,{bold:true,fontSize:Math.max(options.fontSize+1,options.fontSize+(7-level)*1.5),before:level<=2?12:7,after:7,anchorIds:bookmarkAnchorIds(node)});
       return;
     }
     if(tag==='hr'){layout.divider();return;}
@@ -148,7 +236,8 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
       // Handle them in document order instead of silently dropping them.
       if(Array.from(node.getElementsByTagName('*')).some(el=>['img','image'].includes(el.localName?.toLowerCase()))){
         let pending=[];
-        const flush=()=>{const runs=normalizedRuns(pending);if(runs.length)layout.drawParagraph(runs,{indent:tag==='blockquote'?14:tag==='dd'?10:0});pending=[];};
+        let anchorIds=bookmarkAnchorIds(node);
+        const flush=()=>{const runs=normalizedRuns(pending);if(runs.length)layout.drawParagraph(runs,{indent:tag==='blockquote'?14:tag==='dd'?10:0,anchorIds});pending=[];anchorIds=[];};
         for(const child of Array.from(node.childNodes)){
           if(child.nodeType===Node.ELEMENT_NODE && ['img','image'].includes(child.localName?.toLowerCase())){flush();await drawNode(child,path,depth+1);}
           else pending.push(...inlineRuns(child));
@@ -156,7 +245,7 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
         flush();
       }else{
         const runs=normalizedRuns(inlineRuns(node));
-        if(runs.length)layout.drawParagraph(runs,{indent:tag==='blockquote'?14:tag==='dd'?10:0,after:tag==='pre'?8:undefined});
+        if(runs.length)layout.drawParagraph(runs,{indent:tag==='blockquote'?14:tag==='dd'?10:0,after:tag==='pre'?8:undefined,anchorIds:bookmarkAnchorIds(node)});
       }
       return;
     }
@@ -165,7 +254,7 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
       for(const li of Array.from(node.children).filter(el=>el.localName?.toLowerCase()==='li')){
         const prefix=tag==='ol'?`${n++}. `:'• ';
         const runs=normalizedRuns(inlineRuns(li));
-        layout.drawParagraph([{text:prefix},...runs],{indent:10,after:2});
+        layout.drawParagraph([{text:prefix},...runs],{indent:10,after:2,anchorIds:bookmarkAnchorIds(li)});
       }
       layout.cursor-=5;return;
     }
@@ -173,13 +262,13 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
       for(const tr of Array.from(node.querySelectorAll('tr'))){
         const cells=Array.from(tr.children).filter(el=>/^(td|th)$/.test(el.localName?.toLowerCase()||''));
         const text=cells.map(el=>el.textContent.trim()).join('   |   ');
-        if(text)layout.drawParagraph([{text}],{fontSize:options.fontSize*.9,bold:cells.some(el=>el.localName==='th'),after:3});
+        if(text)layout.drawParagraph([{text}],{fontSize:options.fontSize*.9,bold:cells.some(el=>el.localName==='th'),after:3,anchorIds:bookmarkAnchorIds(tr)});
       }
       return;
     }
     if(INLINE.has(tag)){
       const runs=normalizedRuns(inlineRuns(node));
-      if(runs.length)layout.drawParagraph(runs);
+      if(runs.length)layout.drawParagraph(runs,{anchorIds:bookmarkAnchorIds(node)});
       return;
     }
     if(BLOCK.has(tag)||tag==='li'||tag==='picture'){
@@ -195,23 +284,43 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
     for(const child of Array.from(node.children||[]))await drawNode(child,path,depth+1);
   };
   const cover=info.coverItem;
+  const bookmarks=cloneBookmarkTree(info.navigation);
+  const navigationEntries=flattenBookmarks(bookmarks);
   if(options.includeCover&&cover&&info.zip.file(cover.path)){
-    try {await layout.drawImage(await info.zip.file(cover.path).async('uint8array'),cover.media,cover.path);imageCount++;layout.nextPage();}
+    try {
+      const coverPage=layout.currentPageIndex();
+      if(await layout.drawImage(layout.hasImageSource(cover.path)?null:await info.zip.file(cover.path).async('uint8array'),cover.media,cover.path)){
+        imageCount++;bookmarks.unshift({title:'封面',pageIndex:coverPage,children:[]});layout.nextPage();
+        for(const bookmark of navigationEntries)if(bookmark.path===cover.path&&bookmark.pageIndex==null)bookmark.pageIndex=coverPage;
+      }
+    }
     catch(e){warnings.push(`封面無法加入：${e.message}`);}
   }
   let sections=0;
   for(const [index,item] of info.spine.entries()){
     onProgress(index/info.spine.length,`正在處理章節 ${index+1} / ${info.spine.length}`);
     if(index>0)layout.beginChapter();
+    const chapterPage=layout.currentPageIndex();
+    for(const bookmark of navigationEntries)if(bookmark.path===item.path&&bookmark.pageIndex==null)bookmark.pageIndex=chapterPage;
+    activeBookmarkTargets=new Map();
+    for(const bookmark of navigationEntries){
+      if(bookmark.path!==item.path||!bookmark.fragment)continue;
+      const targets=activeBookmarkTargets.get(bookmark.fragment)||[];targets.push(bookmark);activeBookmarkTargets.set(bookmark.fragment,targets);
+    }
     if(item.media.startsWith('image/')){
       if(options.includeImages){
-        try{await layout.drawImage(await info.zip.file(item.path).async('uint8array'),item.media,item.path);imageCount++;}
+       try{if(await layout.drawImage(layout.hasImageSource(item.path)?null:await info.zip.file(item.path).async('uint8array'),item.media,item.path))imageCount++;}
         catch(e){warnings.push(`圖片頁面無法處理：${item.path}：${e.message}`);}
       }
     } else {
       try{
         const raw=await info.zip.file(item.path).async('string');
         const dom=parseMarkup(raw,'text/html');
+        if(!(info.navigation||[]).length){
+          const heading=dom.body.querySelector('h1,h2,h3,h4,h5,h6');
+          const title=cleanLabel(heading?.textContent);
+          if(title)bookmarks.push({title,pageIndex:chapterPage,children:[]});
+        }
         await drawNode(dom.body,item.path);
         sections++;
       }catch(e){warnings.push(`章節無法處理 ${item.path}：${e.message}`);}
@@ -219,9 +328,11 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
     await new Promise(resolve=>setTimeout(resolve,0));
   }
   onProgress(.96,'正在建立 PDF 檔案');
-  const {pagesId,pageCount}=layout.finish();
+  const {pagesId,pageIds,pageCount}=layout.finish();
   if(layout.pageItems===0 && layout.pages.length===1 && sections===0 && imageCount===0)throw new Error('此 EPUB 沒有可輸出的文字或圖片');
-  const blob=finishPdf(writer,pagesId,info);
+  const resolvedBookmarks=resolvedBookmarkTree(bookmarks,pageCount);
+  const bookmarkCount=countBookmarks(resolvedBookmarks);
+  const blob=finishPdf(writer,pagesId,info,pageIds,resolvedBookmarks);
   onProgress(1,'轉換完成');
-  return {blob,pageCount,sections,imageCount,warnings,fileName:`${escapeFile(info.title)}.pdf`,pageSize:[width,height]};
+  return {blob,pageCount,sections,imageCount,bookmarkCount,warnings,fileName:`${escapeFile(info.title)}.pdf`,pageSize:[width,height]};
 }

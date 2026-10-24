@@ -83,7 +83,7 @@ async function convert(){
     status('正在解析 EPUB 章節',.08);
     const output=await convertEpub(state.book,getOptions(),state.font,(progress,msg)=>status(msg,.08+progress*.92));
     state.output=output;
-    $('result-stats').textContent=`${output.pageCount} 頁 · ${(output.blob.size/1024/1024).toFixed(1)} MB · ${SIZE_NAMES[getOptions().pageSize]} · ${output.imageCount} 張圖片`;
+    $('result-stats').textContent=`${output.pageCount} 頁 · ${(output.blob.size/1024/1024).toFixed(1)} MB · ${SIZE_NAMES[getOptions().pageSize]} · ${output.imageCount} 張圖片 · ${output.bookmarkCount} 個書籤`;
     $('result-panel').hidden=false;
     if(output.warnings.length){
       const unique=[...new Set(output.warnings)];

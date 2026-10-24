@@ -155,6 +155,7 @@ export class PdfLayout {
     this.ops=[];
     this.usedImages=new Set();
     this.images=new Map();
+    this.imageSources=new Map();
     this.imageSerial=0;
     this.title=info.title||'';
     this.canvas=document.createElement('canvas');
@@ -163,6 +164,8 @@ export class PdfLayout {
     this.pageFontRef=fontRef;
   }
   maxTextWidth(indent=0){ return this.width-this.margin*2-indent; }
+  currentPageIndex(){ return this.pages.length; }
+  hasImageSource(label){ return Boolean(label&&this.imageSources.has(label)); }
   measure(text,size){this.ctx.font=`${size}px EPUBStudioMing`;return this.ctx.measureText(text).width;}
   ensure(required=20) { if(this.cursor-required < this.margin+(this.opts.pageNumbers?12:0)) this.nextPage(); }
   nextPage() {
@@ -198,12 +201,15 @@ export class PdfLayout {
     const indent=style.indent||0;
     const before=style.before??0;
     const after=style.after??size*.53;
+    const anchorIds=Array.isArray(style.anchorIds)?style.anchorIds:[];
+    let anchorsMarked=false;
     this.cursor-=before;
     const maxW=this.maxTextWidth(indent);
     let line=[], lineW=0;
     const flush=()=>{
       if(!line.length)return;
       this.ensure(height);
+      if(!anchorsMarked&&anchorIds.length){this.onAnchors?.(anchorIds,this.currentPageIndex());anchorsMarked=true;}
       this.drawLine(line,this.margin+indent,this.cursor-size*.87,size,style.bold?'bold':'normal');
       this.cursor-=height;line=[];lineW=0;
     };
@@ -229,31 +235,39 @@ export class PdfLayout {
     return tokens.map(s=>({...run,text:s==='\t'?'    ':s}));
   }
   async drawImage(bytes,media,label='') {
-    const blob=new Blob([bytes],{type:media});
-    let bitmap;
-    try { bitmap=await createImageBitmap(blob); } catch { throw new Error(`不支援圖片格式：${label||media}`); }
-    const w=bitmap.width,h=bitmap.height;
-    if(w<1||h<1) {bitmap.close();return;}
+    let image=label?this.imageSources.get(label):null;
+    if(!image){
+      const blob=new Blob([bytes],{type:media});
+      let bitmap;
+      try { bitmap=await createImageBitmap(blob); } catch { throw new Error(`不支援圖片格式：${label||media}`); }
+      const w=bitmap.width,h=bitmap.height;
+      if(w<1||h<1) {bitmap.close();return false;}
+      const canvas=document.createElement('canvas');
+      const jpegScale=Math.min(1,1800/Math.max(w,h));
+      canvas.width=Math.max(1,Math.round(w*jpegScale));canvas.height=Math.max(1,Math.round(h*jpegScale));
+      const context=canvas.getContext('2d',{alpha:false});
+      context.fillStyle='#ffffff';context.fillRect(0,0,canvas.width,canvas.height);
+      context.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
+      const jpegBlob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.88));
+      if(!jpegBlob)return false;
+      const jpgBytes=new Uint8Array(await jpegBlob.arrayBuffer());
+      const key=`Im${++this.imageSerial}`;
+      const imgRef=this.writer.stream(jpgBytes,`/Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`);
+      this.images.set(key,imgRef);
+      image={key,width:w,height:h};
+      if(label)this.imageSources.set(label,image);
+    }
+    const {key,width:w,height:h}=image;
     const maxWidth=Math.max(1,this.width-2*this.margin);
     const maxHeight=Math.max(1,this.height-2*this.margin-18);
     const scale=Math.min(maxWidth/w,maxHeight/h,1.6);
     const pw=w*scale,ph=h*scale;
     if(ph+10 > this.cursor-this.margin-(this.opts.pageNumbers?12:0) && this.pageItems) this.nextPage();
-    const canvas=document.createElement('canvas');
-    const jpegScale=Math.min(1,1800/Math.max(w,h));
-    canvas.width=Math.max(1,Math.round(w*jpegScale));canvas.height=Math.max(1,Math.round(h*jpegScale));
-    const context=canvas.getContext('2d',{alpha:false});
-    context.fillStyle='#ffffff';context.fillRect(0,0,canvas.width,canvas.height);
-    context.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
-    const jpegBlob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.88));
-    if(!jpegBlob) return;
-    const jpgBytes=new Uint8Array(await jpegBlob.arrayBuffer());
-    const key=`Im${++this.imageSerial}`;
-    const imgRef=this.writer.stream(jpgBytes,`/Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`);
-    this.images.set(key,imgRef);this.usedImages.add(key);
+    this.usedImages.add(key);
     const x=(this.width-pw)/2,y=this.cursor-ph;
     this.ops.push(`q ${fmt(pw)} 0 0 ${fmt(ph)} ${fmt(x)} ${fmt(y)} cm /${key} Do Q`);
     this.cursor-=ph+10;this.pageItems++;
+    return true;
   }
   divider(){this.ensure(16);this.ops.push(`0.75 G 0.5 w ${fmt(this.margin)} ${fmt(this.cursor-5)} m ${fmt(this.width-this.margin)} ${fmt(this.cursor-5)} l S 0 G`);this.cursor-=15;this.pageItems++;}
   finish() {
@@ -275,12 +289,34 @@ export class PdfLayout {
       pageIds.push(this.writer.add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${fmt(this.width)} ${fmt(this.height)}] /Resources ${resources} /Contents ${streamId} 0 R >>`));
     }
     this.writer.set(pagesId,`<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map(x=>`${x} 0 R`).join(' ')}] >>`);
-    return {pagesId,pageCount:pageIds.length};
+    return {pagesId,pageIds,pageCount:pageIds.length};
   }
 }
 
-export function finishPdf(writer,pagesId,metadata) {
-  const root=writer.add(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+function writeOutlineLevel(writer,nodes,parentId,pageIds){
+  const ids=nodes.map(()=>writer.reserve());
+  nodes.forEach((node,index)=>{
+    const childIds=node.children?.length?writeOutlineLevel(writer,node.children,ids[index],pageIds):[];
+    const pageId=pageIds[node.pageIndex];
+    let object=`<< /Title ${pdfUnicodeString(node.title)} /Parent ${parentId} 0 R /Dest [${pageId} 0 R /Fit]`;
+    if(index)object+=` /Prev ${ids[index-1]} 0 R`;
+    if(index<ids.length-1)object+=` /Next ${ids[index+1]} 0 R`;
+    if(childIds.length)object+=` /First ${childIds[0]} 0 R /Last ${childIds.at(-1)} 0 R /Count ${countOutlineDescendants(node.children)}`;
+    writer.set(ids[index],`${object} >>`);
+  });
+  return ids;
+}
+const countOutlineDescendants=nodes=>(nodes||[]).reduce((total,node)=>total+1+countOutlineDescendants(node.children),0);
+
+export function finishPdf(writer,pagesId,metadata,pageIds=[],bookmarks=[]) {
+  let outlinesRef='';
+  if(bookmarks.length){
+    const outlinesId=writer.reserve();
+    const itemIds=writeOutlineLevel(writer,bookmarks,outlinesId,pageIds);
+    writer.set(outlinesId,`<< /Type /Outlines /First ${itemIds[0]} 0 R /Last ${itemIds.at(-1)} 0 R /Count ${countOutlineDescendants(bookmarks)} >>`);
+    outlinesRef=` /Outlines ${outlinesId} 0 R /PageMode /UseOutlines`;
+  }
+  const root=writer.add(`<< /Type /Catalog /Pages ${pagesId} 0 R${outlinesRef} >>`);
   const info=writer.add(`<< /Title ${pdfUnicodeString(metadata.title||'EPUB 轉 PDF')} /Author ${pdfUnicodeString(metadata.author||'')} /Creator (EPUB PDF Studio) /Producer (EPUB PDF Studio) >>`);
   return writer.build(root,info);
 }
