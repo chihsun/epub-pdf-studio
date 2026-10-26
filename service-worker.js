@@ -1,6 +1,6 @@
 /* App shell and local-only dependencies cached on first online install. */
-const CACHE='epub-pdf-studio-v1.2.0';
-const ASSETS=['./','./index.html','./styles.css','./app.js','./epub-reader.js','./pdf-engine.js','./vendor/jszip.min.js','./fonts/reading-ming.ttf','./assets/icon.svg','./manifest.webmanifest'];
+const CACHE='epub-pdf-studio-v1.3.0';
+const ASSETS=['./','./index.html','./styles.css','./theme.css','./theme.js','./app.js','./epub-reader.js','./pdf-engine.js','./vendor/jszip.min.js','./fonts/reading-ming.ttf','./assets/icon.svg','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
 });
