@@ -94,7 +94,7 @@
             <section class="panel options-panel" aria-labelledby="pdf-options-heading">
               <div class="panel-heading"><span class="step-number">02</span><div><h2 id="pdf-options-heading">最佳化選項</h2><p>無損處理預設開啟；有損圖片處理為選用</p></div></div>
               <div class="pdf-safety-box"><strong>原始品質</strong><p>壓縮可解碼的 PDF stream，保留既有圖片編碼，不調整圖片解析度。</p></div>
-              <label class="toggle-row pdf-lossy-toggle"><span><strong>允許圖片以 JPEG 有損重壓縮</strong><small>非 JPEG 僅在支援且縮小時轉換；既有 JPEG 也可能再次編碼，不會下採樣</small></span><input type="checkbox" id="pdf-lossy-images" /><i aria-hidden="true"></i></label>
+              <label class="toggle-row pdf-lossy-toggle"><span><strong>允許圖片以 JPEG 有損重壓縮</strong><small>非 JPEG 須符合 qpdf 預設尺寸門檻且縮小才轉換；既有 JPEG 也可能再次編碼，不會下採樣</small></span><input type="checkbox" id="pdf-lossy-images" /><i aria-hidden="true"></i></label>
               <p class="pdf-lossy-warning" id="pdf-lossy-warning" hidden>此選項可能降低圖片品質或合併透明效果。若保留掃描文字、線稿、OCR 或透明圖層很重要，請勿勾選。</p>
               <details class="pdf-advanced"><summary>進階設定</summary><label class="pdf-password-label" for="pdf-password">開啟密碼（選填）<input id="pdf-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="只在本次處理使用，不會儲存" /></label><label class="toggle-row"><span><strong>產生 PDF 物件串流</strong><small>可再縮小結構；PDF 版本可能提升至 1.5</small></span><input type="checkbox" id="pdf-object-streams" /><i aria-hidden="true"></i></label></details>
             </section>
@@ -105,7 +105,7 @@
             <div id="pdf-warning-panel" class="warning-panel" hidden></div><div id="pdf-error-panel" class="error-panel" hidden role="alert"></div>
           </section>
         </section>
-        <footer class="footer"><span>EPUB PDF Studio · v1.4.0 · Commit 2026-10-27 14:20:26 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
+        <footer class="footer"><span>EPUB PDF Studio · v1.4.0 · Commit 2026-10-27 14:22:33 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
       </div>
     </main>
   </div>
