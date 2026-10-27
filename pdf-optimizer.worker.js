@@ -106,10 +106,20 @@ async function optimize(message){
       error.code='PDF_SIGNED';
       throw error;
     }
+    // Derive the page count from the structured data already generated above.
+    // Some qpdf WASM runtimes write --show-npages directly to the worker console
+    // instead of Module.print, leaving the captured stdout empty despite success.
+    let pageCount;
+    try{
+      const signatureData=JSON.parse(signatureJson);
+      if(Array.isArray(signatureData.pages))pageCount=signatureData.pages.length;
+    }catch{}
+    if(!Number.isSafeInteger(pageCount)){
+      const error=new Error('無法讀取 PDF 頁數；原始檔未修改。');
+      error.code='PDF_PAGE_COUNT_FAILED';
+      throw error;
+    }
     cleanup([signaturePath]);
-    const pagesResult=runQpdf([...auth,'--show-npages',inputPath]);
-    const pageCount=Number.parseInt(pagesResult.stdout,10);
-    if(pagesResult.exitCode!==0||!Number.isFinite(pageCount))throw new Error(pagesResult.stderr||'無法讀取 PDF 頁數');
 
     self.postMessage({type:'progress',phase:'optimizing',message:'正在進行無損結構與圖片處理'});
     const quality=options.quality||{};
