@@ -14,6 +14,111 @@ const escapeHex = (text) => {
 const pdfUnicodeString = (text) => `<FEFF${escapeHex(text)}>`;
 const fmt = number => Number(number.toFixed(2)).toString();
 
+async function collectDeflated(readable){
+  const reader=readable.getReader();
+  const chunks=[];
+  let length=0;
+  while(true){
+    const {value,done}=await reader.read();
+    if(done)break;
+    chunks.push(value);length+=value.length;
+  }
+  const output=new Uint8Array(length);
+  let offset=0;
+  for(const chunk of chunks){output.set(chunk,offset);offset+=chunk.length;}
+  return output;
+}
+
+async function deflateBytes(bytes){
+  if(typeof CompressionStream==='undefined')throw new Error('此瀏覽器不支援 PDF 無損壓縮');
+  const stream=new CompressionStream('deflate');
+  const compressed=collectDeflated(stream.readable);
+  const writer=stream.writable.getWriter();
+  await writer.write(bytes);
+  await writer.close();
+  return compressed;
+}
+
+async function deflateImagePlanes(data,width,height){
+  if(typeof CompressionStream==='undefined')throw new Error('此瀏覽器不支援圖片無損壓縮');
+  let hasAlpha=false;
+  for(let index=3;index<data.length;index+=4){if(data[index]!==255){hasAlpha=true;break;}}
+  const colorStream=new CompressionStream('deflate');
+  const alphaStream=hasAlpha?new CompressionStream('deflate'):null;
+  const colorPromise=collectDeflated(colorStream.readable);
+  const alphaPromise=alphaStream?collectDeflated(alphaStream.readable):null;
+  const colorWriter=colorStream.writable.getWriter();
+  const alphaWriter=alphaStream?.writable.getWriter();
+  const rowsPerBatch=Math.max(1,Math.floor(900000/Math.max(1,width)));
+  for(let top=0;top<height;top+=rowsPerBatch){
+    const rows=Math.min(rowsPerBatch,height-top);
+    const color=new Uint8Array(rows*width*3);
+    const alpha=hasAlpha?new Uint8Array(rows*width):null;
+    for(let row=0;row<rows;row++){
+      let source=((top+row)*width)*4;
+      let rgb=(row*width)*3;
+      let gray=row*width;
+      for(let column=0;column<width;column++){
+        color[rgb++]=data[source++];
+        color[rgb++]=data[source++];
+        color[rgb++]=data[source++];
+        if(alpha)alpha[gray++]=data[source];
+        source++;
+      }
+    }
+    await colorWriter.write(color);
+    if(alphaWriter)await alphaWriter.write(alpha);
+  }
+  await colorWriter.close();
+  if(alphaWriter)await alphaWriter.close();
+  const [color,alpha]=await Promise.all([colorPromise,alphaPromise||Promise.resolve(null)]);
+  return {color,alpha};
+}
+
+function jpegInfo(bytes){
+  if(!bytes||bytes.length<4||bytes[0]!==0xff||bytes[1]!==0xd8)return null;
+  let width=0,height=0,components=0,orientation=1,frameMarker=0;
+  let offset=2;
+  const u16=(at,little=false)=>little?bytes[at]|bytes[at+1]<<8:bytes[at]<<8|bytes[at+1];
+  const u32=(at,little=false)=>little?(bytes[at]|bytes[at+1]<<8|bytes[at+2]<<16|bytes[at+3]<<24)>>>0:(bytes[at]*0x1000000+bytes[at+1]*0x10000+bytes[at+2]*0x100+bytes[at+3])>>>0;
+  const sof=new Set([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf]);
+  while(offset+4<bytes.length){
+    if(bytes[offset]!==0xff){offset++;continue;}
+    while(offset<bytes.length&&bytes[offset]===0xff)offset++;
+    const marker=bytes[offset++];
+    if(marker===0xd9||marker===0xda)break;
+    if(marker===0x01||(marker>=0xd0&&marker<=0xd7))continue;
+    if(offset+2>bytes.length)break;
+    const segmentLength=u16(offset);
+    if(segmentLength<2||offset+segmentLength>bytes.length)break;
+    const payload=offset+2;
+    if(marker===0xe1&&segmentLength>=16&&bytes[payload]===0x45&&bytes[payload+1]===0x78&&bytes[payload+2]===0x69&&bytes[payload+3]===0x66&&bytes[payload+4]===0&&bytes[payload+5]===0){
+      const tiff=payload+6;
+      const little=bytes[tiff]===0x49&&bytes[tiff+1]===0x49;
+      if((little||bytes[tiff]===0x4d&&bytes[tiff+1]===0x4d)&&u16(tiff+2,little)===42){
+        const ifd=tiff+u32(tiff+4,little);
+        if(ifd+2<=offset+segmentLength){
+          const count=u16(ifd,little);
+          for(let entry=ifd+2;entry+12<=ifd+2+count*12&&entry+12<=offset+segmentLength;entry+=12){
+            if(u16(entry,little)!==0x0112)continue;
+            const type=u16(entry+2,little),items=u32(entry+4,little);
+            const valueAt=items===1?entry+8:tiff+u32(entry+8,little);
+            if(type===3&&valueAt+2<=offset+segmentLength)orientation=u16(valueAt,little);
+            else orientation=0;
+            break;
+          }
+        }
+      }
+    }
+    if(sof.has(marker)&&segmentLength>=8){
+      frameMarker=marker;height=u16(payload+1);width=u16(payload+3);components=bytes[payload+5];
+    }
+    offset+=segmentLength;
+  }
+  if(!width||!height)return null;
+  return {width,height,components,orientation,canEmbed:[0xc0,0xc1,0xc2].includes(frameMarker)&&orientation===1&&(components===1||components===3)};
+}
+
 export class PdfWriter {
   constructor() { this.objects = [null]; }
   reserve() { this.objects.push(null); return this.objects.length - 1; }
@@ -120,10 +225,16 @@ function makeUnicodeCMap() {
   return writeAscii(`/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n1 beginbfrange\n<0000> <FFFF> <0000>\nendbfrange\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend`);
 }
 
-export function addEmbeddedFont(writer, font) {
+export async function addEmbeddedFont(writer, font) {
   const descriptorId=writer.reserve();
   const cidFontId=writer.reserve();
-  const fontStreamId=writer.stream(font.bytes,`/Length1 ${font.bytes.length}`);
+  let fontBytes=font.bytes;
+  let fontFilter='';
+  try{
+    const compressed=await deflateBytes(font.bytes);
+    if(compressed.length<font.bytes.length){fontBytes=compressed;fontFilter=' /Filter /FlateDecode';}
+  }catch{}
+  const fontStreamId=writer.stream(fontBytes,`${fontFilter} /Length1 ${font.bytes.length}`);
   const gidMapId=writer.stream(font.metrics.cidMap);
   const unicodeId=writer.stream(makeUnicodeCMap());
   const asc=Math.round(font.metrics.ascender/font.metrics.upm*1000);
@@ -234,62 +345,112 @@ export class PdfLayout {
     const tokens=text.match(/\n|[\t ]+|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[^\n\t \p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu)||[];
     return tokens.map(s=>({...run,text:s==='\t'?'    ':s}));
   }
-  trimCoverWhitespace(canvas){
-    try{
-      const width=canvas.width,height=canvas.height;
-      const data=canvas.getContext('2d').getImageData(0,0,width,height).data;
-      let minX=width,minY=height,maxX=-1,maxY=-1;
-      for(let y=0;y<height;y+=2){
-        for(let x=0;x<width;x+=2){
-          const offset=(y*width+x)*4;
-          if(data[offset]<248||data[offset+1]<248||data[offset+2]<248){
-            minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
-          }
+  coverBounds(canvas){
+    const width=canvas.width,height=canvas.height;
+    const data=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,width,height).data;
+    let minX=width,minY=height,maxX=-1,maxY=-1;
+    for(let y=0;y<height;y+=2){
+      for(let x=0;x<width;x+=2){
+        const offset=(y*width+x)*4;
+        if(data[offset+3]>8&&(data[offset]<248||data[offset+1]<248||data[offset+2]<248)){
+          minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
         }
       }
-      if(maxX<0)return canvas;
-      const padX=Math.ceil(width*.015),padY=Math.ceil(height*.015);
-      let left=0,right=width,top=0,bottom=height;
-      if(minX>=width*.08&&width-1-maxX>=width*.08){left=Math.max(0,minX-padX);right=Math.min(width,maxX+padX+1);}
-      if(minY>=height*.08&&height-1-maxY>=height*.08){top=Math.max(0,minY-padY);bottom=Math.min(height,maxY+padY+1);}
-      if(left===0&&right===width&&top===0&&bottom===height)return canvas;
-      const trimmed=document.createElement('canvas');
-      trimmed.width=right-left;trimmed.height=bottom-top;
-      trimmed.getContext('2d',{alpha:false}).drawImage(canvas,left,top,trimmed.width,trimmed.height,0,0,trimmed.width,trimmed.height);
-      return trimmed;
-    }catch{return canvas;}
+    }
+    if(maxX<0)return {left:0,top:0,right:width,bottom:height,width,height};
+    const padX=Math.ceil(width*.015),padY=Math.ceil(height*.015);
+    let left=0,right=width,top=0,bottom=height;
+    if(minX>=width*.08&&width-1-maxX>=width*.08){left=Math.max(0,minX-padX);right=Math.min(width,maxX+padX+1);}
+    if(minY>=height*.08&&height-1-maxY>=height*.08){top=Math.max(0,minY-padY);bottom=Math.min(height,maxY+padY+1);}
+    return {left,top,right,bottom,width:right-left,height:bottom-top};
+  }
+  async coverCrop(bitmap,width,height){
+    const scale=Math.min(1,1000/Math.max(width,height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
+    const context=canvas.getContext('2d',{willReadFrequently:true});
+    context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    const bounds=this.coverBounds(canvas);
+    const left=Math.max(0,Math.floor(bounds.left*width/canvas.width));
+    const top=Math.max(0,Math.floor(bounds.top*height/canvas.height));
+    const right=Math.min(width,Math.ceil(bounds.right*width/canvas.width));
+    const bottom=Math.min(height,Math.ceil(bounds.bottom*height/canvas.height));
+    return {left,top,right,bottom,width:right-left,height:bottom-top};
+  }
+  addJpegImage(bytes,width,height,components){
+    const key=`Im${++this.imageSerial}`;
+    const colorSpace=components===1?'/DeviceGray':'/DeviceRGB';
+    const imageRef=this.writer.stream(bytes,`/Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace ${colorSpace} /BitsPerComponent 8 /Filter /DCTDecode`);
+    this.images.set(key,imageRef);
+    return {key,width,height};
+  }
+  async addLosslessImage(canvas){
+    const width=canvas.width,height=canvas.height;
+    const data=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,width,height).data;
+    const {color,alpha}=await deflateImagePlanes(data,width,height);
+    const alphaRef=alpha?this.writer.stream(alpha,`/Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode`):null;
+    const mask=alphaRef?` /SMask ${alphaRef} 0 R`:'';
+    const key=`Im${++this.imageSerial}`;
+    const imageRef=this.writer.stream(color,`/Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode${mask}`);
+    this.images.set(key,imageRef);
+    return {key,width,height};
   }
   async drawImage(bytes,media,label='',cover=false) {
     const cacheKey=label?`${cover?'cover':'image'}:${label}`:'';
     let image=cacheKey?this.imageSources.get(cacheKey):null;
     if(!image){
-      const blob=new Blob([bytes],{type:media});
-      let bitmap;
-      try { bitmap=await createImageBitmap(blob); } catch { throw new Error(`不支援圖片格式：${label||media}`); }
-      const w=bitmap.width,h=bitmap.height;
-      if(w<1||h<1) {bitmap.close();return false;}
-      const canvas=document.createElement('canvas');
-      const jpegScale=Math.min(1,1800/Math.max(w,h));
-      canvas.width=Math.max(1,Math.round(w*jpegScale));canvas.height=Math.max(1,Math.round(h*jpegScale));
-      const context=canvas.getContext('2d',{alpha:false});
-      context.fillStyle='#ffffff';context.fillRect(0,0,canvas.width,canvas.height);
-      context.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
-      const outputCanvas=cover?this.trimCoverWhitespace(canvas):canvas;
-      const jpegBlob=await new Promise(resolve=>outputCanvas.toBlob(resolve,'image/jpeg',.88));
-      if(!jpegBlob)return false;
-      const jpgBytes=new Uint8Array(await jpegBlob.arrayBuffer());
-      const key=`Im${++this.imageSerial}`;
-      const imgRef=this.writer.stream(jpgBytes,`/Type /XObject /Subtype /Image /Width ${outputCanvas.width} /Height ${outputCanvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`);
-      this.images.set(key,imgRef);
-      image={key,width:cover?outputCanvas.width:w,height:cover?outputCanvas.height:h};
+      if(!bytes)throw new Error('圖片資料遺失');
+      const quality=this.opts.quality||{preset:'original'};
+      const originalQuality=quality.preset==='original';
+      const isJpeg=media==='image/jpeg'||media==='image/jpg';
+      const jpeg=isJpeg?jpegInfo(bytes):null;
+      const directJpeg=Boolean(originalQuality&&jpeg?.canEmbed);
+      let bitmap=null;
+      if(!directJpeg||cover){
+        try{bitmap=await createImageBitmap(new Blob([bytes],{type:media}));}
+        catch{throw new Error(`不支援圖片格式：${label||media}`);}
+      }
+      try{
+        const width=directJpeg?jpeg.width:bitmap.width;
+        const height=directJpeg?jpeg.height:bitmap.height;
+        if(width<1||height<1)return false;
+        const crop=cover?await this.coverCrop(bitmap,width,height):{left:0,top:0,right:width,bottom:height,width,height};
+        if(directJpeg){
+          image={...this.addJpegImage(bytes,width,height,jpeg.components),crop};
+        }else{
+          const maxWidth=Math.max(1,this.width-2*this.margin);
+          const maxHeight=Math.max(1,this.height-2*this.margin-18);
+          const displayScale=cover?Math.max(this.width/crop.width,this.height/crop.height):Math.min(maxWidth/width,maxHeight/height,1.6);
+          const actualDpi=displayScale>0?72/displayScale:0;
+          const downsample=originalQuality||!quality.targetDpi||!quality.thresholdDpi||actualDpi<=quality.thresholdDpi
+            ?1:Math.max(0.01,Math.min(1,displayScale*quality.targetDpi/72));
+          const outputWidth=Math.max(1,Math.round(crop.width*downsample));
+          const outputHeight=Math.max(1,Math.round(crop.height*downsample));
+          const canvas=document.createElement('canvas');
+          canvas.width=outputWidth;canvas.height=outputHeight;
+          const context=canvas.getContext('2d',{alpha:originalQuality,willReadFrequently:originalQuality});
+          if(!originalQuality){context.fillStyle='#ffffff';context.fillRect(0,0,outputWidth,outputHeight);}
+          context.drawImage(bitmap,crop.left,crop.top,crop.width,crop.height,0,0,outputWidth,outputHeight);
+          if(originalQuality){
+            image=await this.addLosslessImage(canvas);
+          }else{
+            const jpegBlob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',Math.min(1,Math.max(.4,quality.jpegQuality/100))));
+            if(!jpegBlob)throw new Error('無法依品質設定壓縮圖片');
+            image=this.addJpegImage(new Uint8Array(await jpegBlob.arrayBuffer()),outputWidth,outputHeight,3);
+          }
+          image.crop={left:0,top:0,right:outputWidth,bottom:outputHeight,width:outputWidth,height:outputHeight};
+        }
+      }finally{bitmap?.close();}
       if(cacheKey)this.imageSources.set(cacheKey,image);
     }
     const {key,width:w,height:h}=image;
     if(cover){
       if(this.pageItems)this.nextPage();
-      const scale=Math.max(this.width/w,this.height/h);
+      const crop=image.crop||{left:0,top:0,width:w,height:h};
+      const scale=Math.max(this.width/crop.width,this.height/crop.height);
       const pw=w*scale,ph=h*scale;
-      const x=(this.width-pw)/2,y=(this.height-ph)/2;
+      const x=(this.width-crop.width*scale)/2-crop.left*scale;
+      const y=(this.height-crop.height*scale)/2-(h-crop.top-crop.height)*scale;
       this.usedImages.add(key);
       this.ops.push(`q ${fmt(pw)} 0 0 ${fmt(ph)} ${fmt(x)} ${fmt(y)} cm /${key} Do Q`);
       this.pageItems++;
