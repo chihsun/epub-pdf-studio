@@ -35,12 +35,6 @@
       </div><span class="top-avatar" aria-hidden="true">EP</span></div></header>
       <div class="main-inner">
         <nav class="mobile-tool-switch" aria-label="工具工作區"><button type="button" data-workspace="epub" aria-pressed="true">EPUB 轉 PDF</button><button type="button" data-workspace="pdf" aria-pressed="false">PDF 最佳化</button></nav>
-        <section class="panel quality-panel" aria-labelledby="quality-heading">
-          <div class="quality-panel-head"><div><h2 id="quality-heading">圖片品質設定</h2><p>共用於 EPUB 轉 PDF 與 PDF 最佳化</p></div><span class="quality-default" id="quality-current-label">目前：原始品質</span></div>
-          <div class="quality-control-grid"><label class="quality-select-label" for="quality-preset">品質預設<select id="quality-preset"><option value="original">原始品質</option><option value="high">高品質</option><option value="balanced">均衡</option><option value="compression">高壓縮</option><option value="custom">自訂</option></select></label><p class="quality-description" id="quality-description" aria-live="polite"></p></div>
-          <div class="quality-custom" id="quality-custom" hidden><label for="quality-target-dpi">目標 DPI<input id="quality-target-dpi" type="number" min="72" max="1200" step="1" value="180" /></label><label for="quality-threshold-dpi">啟動門檻 DPI<input id="quality-threshold-dpi" type="number" min="72" max="2400" step="1" value="270" /></label><label for="quality-jpeg">JPEG 品質<input id="quality-jpeg" type="number" min="40" max="100" step="1" value="82" /></label></div>
-          <p class="quality-note">EPUB 會套用 DPI 與 JPEG 品質；PDF 引擎不會下採樣圖片，只有另行勾選有損圖片處理時才使用 JPEG 品質。</p>
-        </section>
         <section id="epub-workspace" class="workspace-view" aria-label="EPUB 轉 PDF 工作區">
         <div class="eyebrow"><span class="eyebrow-dot"></span> LOCAL-FIRST CONVERTER <span class="eyebrow-line"></span> 01 / 03</div>
         <div class="hero"><div><h1>把電子書，<span>變成你想要的版面。</span></h1><p>匯入 EPUB，自訂紙張、字體與排版，直接轉成可搜尋、可下載的 PDF。全程離線處理，無須上傳任何檔案。</p></div><div class="hero-art" aria-hidden="true"><div class="book-illustration"><div class="book-cover"><div class="book-mark"></div><div class="book-lines"><i></i><i></i><i></i></div><b>EPUB</b></div><div class="arrow-shape">➜</div><div class="paper-illustration"><span class="paper-fold"></span><div class="paper-lines"><i></i><i></i><i></i><i></i></div><b>PDF</b></div></div></div></div>
@@ -71,6 +65,12 @@
             <div class="form-group"><label class="field-label">頁面翻閱方向 <span>READING DIRECTION</span></label><div class="segmented" id="reading-direction-options" role="radiogroup" aria-label="頁面翻閱方向"><label><input type="radio" name="reading-direction" value="auto" checked /><span>自動</span></label><label><input type="radio" name="reading-direction" value="ltr" /><span>左至右</span></label><label><input type="radio" name="reading-direction" value="rtl" /><span>右至左</span></label></div><small>自動讀取 EPUB 方向標記與直排 CSS；可手動覆寫。</small></div>
             <div class="three-sliders"><div class="form-group"><label class="field-label" for="font-size">內文字級 <output id="font-size-label">12 pt</output></label><input type="range" id="font-size" min="9" max="18" step="1" value="12" /><div class="range-foot"><span>小</span><span>大</span></div></div><div class="form-group"><label class="field-label" for="margin">頁邊距 <output id="margin-label">18 mm</output></label><input type="range" id="margin" min="10" max="30" step="2" value="18" /><div class="range-foot"><span>窄</span><span>寬</span></div></div><div class="form-group"><label class="field-label" for="line-height">行距 <output id="line-height-label">1.5×</output></label><input type="range" id="line-height" min="1.2" max="2" step="0.1" value="1.5" /><div class="range-foot"><span>密</span><span>疏</span></div></div></div>
             <div class="form-group toggles"><label class="field-label">內容與頁面設定 <span>EXTRAS</span></label><label class="toggle-row"><span><strong>加入封面圖片</strong><small>自動滿版放大並裁切明顯白邊</small></span><input type="checkbox" id="include-cover" checked /><i aria-hidden="true"></i></label><label class="toggle-row"><span><strong>保留內文圖片</strong><small>支援 JPEG、PNG、WebP、GIF</small></span><input type="checkbox" id="include-images" checked /><i aria-hidden="true"></i></label><label class="toggle-row"><span><strong>每個章節另起新頁</strong><small>適合小說及長篇閱讀</small></span><input type="checkbox" id="chapter-break" checked /><i aria-hidden="true"></i></label><label class="toggle-row"><span><strong>顯示頁碼</strong><small>在每頁底部置中</small></span><input type="checkbox" id="page-numbers" checked /><i aria-hidden="true"></i></label></div>
+            <section class="quality-panel" data-quality-settings aria-labelledby="epub-quality-heading">
+              <div class="quality-panel-head"><div><h3 id="epub-quality-heading">圖片品質</h3><p>與 PDF 最佳化共用品質預設</p></div><span class="quality-default" data-quality-current>目前：原始品質</span></div>
+              <div class="quality-control-grid"><label class="quality-select-label">品質預設<select data-quality-preset><option value="original">原始品質</option><option value="high">高品質</option><option value="balanced">均衡</option><option value="compression">高壓縮</option><option value="custom">自訂</option></select></label><p class="quality-description" data-quality-description aria-live="polite"></p></div>
+              <div class="quality-custom" data-quality-custom hidden><label>目標 DPI<input data-quality-input="targetDpi" type="number" min="72" max="1200" step="1" value="180" /></label><label>啟動門檻 DPI<input data-quality-input="thresholdDpi" type="number" min="72" max="2400" step="1" value="270" /></label><label>JPEG 品質<input data-quality-input="jpegQuality" type="number" min="40" max="100" step="1" value="82" /></label></div>
+              <p class="quality-note">EPUB 會套用 DPI 與 JPEG 品質；PDF 只有勾選下方的有損圖片處理時才使用 JPEG 品質。</p>
+            </section>
           </section>
         </div>
         <section class="panel export-panel" aria-labelledby="export-heading"><div class="export-head"><div class="panel-heading"><span class="step-number">03</span><div><h2 id="export-heading">轉換與下載</h2><p>PDF 保留可選取、可搜尋、可複製的文字</p></div></div><div class="export-controls"><span class="export-note"><span aria-hidden="true">◉</span> 100% 本機處理</span><button id="convert-button" class="primary-button" type="button" disabled><span id="convert-button-label">開始轉換 PDF</span><span class="button-arrow">→</span></button></div></div>
@@ -93,7 +93,13 @@
             </section>
             <section class="panel options-panel" aria-labelledby="pdf-options-heading">
               <div class="panel-heading"><span class="step-number">02</span><div><h2 id="pdf-options-heading">最佳化選項</h2><p>無損處理預設開啟；有損圖片處理為選用</p></div></div>
-              <div class="pdf-safety-box"><strong>原始品質</strong><p>壓縮可解碼的 PDF stream，保留既有圖片編碼，不調整圖片解析度。</p></div>
+              <section class="quality-panel" data-quality-settings aria-labelledby="pdf-quality-heading">
+                <div class="quality-panel-head"><div><h3 id="pdf-quality-heading">圖片品質</h3><p>與 EPUB 轉 PDF 共用品質預設</p></div><span class="quality-default" data-quality-current>目前：原始品質</span></div>
+                <div class="quality-control-grid"><label class="quality-select-label">品質預設<select data-quality-preset><option value="original">原始品質</option><option value="high">高品質</option><option value="balanced">均衡</option><option value="compression">高壓縮</option><option value="custom">自訂</option></select></label><p class="quality-description" data-quality-description aria-live="polite"></p></div>
+                <div class="quality-custom" data-quality-custom hidden><label>目標 DPI<input data-quality-input="targetDpi" type="number" min="72" max="1200" step="1" value="180" /></label><label>啟動門檻 DPI<input data-quality-input="thresholdDpi" type="number" min="72" max="2400" step="1" value="270" /></label><label>JPEG 品質<input data-quality-input="jpegQuality" type="number" min="40" max="100" step="1" value="82" /></label></div>
+                <p class="quality-note">PDF 只套用 JPEG 品質、不使用 DPI 下採樣；須勾選下方有損圖片處理才會生效。</p>
+              </section>
+              <div class="pdf-safety-box"><strong>預設無損</strong><p>不勾選圖片重壓縮時，只整理結構並壓縮可解碼的 PDF stream；既有圖片編碼與解析度不變。</p></div>
               <label class="toggle-row pdf-lossy-toggle"><span><strong>允許圖片以 JPEG 有損重壓縮</strong><small>非 JPEG 須符合 qpdf 預設尺寸門檻且縮小才轉換；既有 JPEG 也可能再次編碼，不會下採樣</small></span><input type="checkbox" id="pdf-lossy-images" /><i aria-hidden="true"></i></label>
               <p class="pdf-lossy-warning" id="pdf-lossy-warning" hidden>此選項可能降低圖片品質或合併透明效果。若保留掃描文字、線稿、OCR 或透明圖層很重要，請勿勾選。</p>
               <details class="pdf-advanced"><summary>進階設定</summary><label class="pdf-password-label" for="pdf-password">開啟密碼（選填）<input id="pdf-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="只在本次處理使用，不會儲存" /></label><label class="toggle-row"><span><strong>產生 PDF 物件串流</strong><small>可再縮小結構；PDF 版本可能提升至 1.5</small></span><input type="checkbox" id="pdf-object-streams" /><i aria-hidden="true"></i></label></details>
@@ -105,7 +111,7 @@
             <div id="pdf-warning-panel" class="warning-panel" hidden></div><div id="pdf-error-panel" class="error-panel" hidden role="alert"></div>
           </section>
         </section>
-        <footer class="footer"><span>EPUB PDF Studio · v1.4.0 · Commit 2026-10-27 14:22:33 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
+        <footer class="footer"><span>EPUB PDF Studio · v1.4.1 · Commit 2026-10-27 19:53:47 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
       </div>
     </main>
   </div>

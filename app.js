@@ -74,25 +74,32 @@ function updatePdfLossyWarning(){
   lossy.disabled=original;
   $('pdf-lossy-warning').hidden=!lossy.checked;
 }
+function readQualityPanel(panel){
+  return {
+    preset:panel.querySelector('[data-quality-preset]').value,
+    custom:Object.fromEntries(['targetDpi','thresholdDpi','jpegQuality'].map(key=>[
+      key,panel.querySelector(`[data-quality-input="${key}"]`).value
+    ]))
+  };
+}
 function renderQualitySettings(){
   const preset=qualitySettings.preset;
   const resolved=resolveQualitySettings(qualitySettings);
-  $('quality-preset').value=preset;
-  $('quality-custom').hidden=preset!=='custom';
-  $('quality-target-dpi').value=resolved.targetDpi??180;
-  $('quality-threshold-dpi').value=resolved.thresholdDpi??270;
-  $('quality-jpeg').value=resolved.jpegQuality??82;
-  $('quality-current-label').textContent=`目前：${QUALITY_PRESETS[preset].label}`;
-  $('quality-description').textContent=preset==='custom'
-    ?`圖片高於 ${resolved.thresholdDpi} DPI 才縮至 ${resolved.targetDpi} DPI；JPEG 品質 ${resolved.jpegQuality}。`
-    :QUALITY_PRESETS[preset].description;
+  for(const panel of document.querySelectorAll('[data-quality-settings]')){
+    panel.querySelector('[data-quality-preset]').value=preset;
+    panel.querySelector('[data-quality-custom]').hidden=preset!=='custom';
+    panel.querySelector('[data-quality-input="targetDpi"]').value=resolved.targetDpi??180;
+    panel.querySelector('[data-quality-input="thresholdDpi"]').value=resolved.thresholdDpi??270;
+    panel.querySelector('[data-quality-input="jpegQuality"]').value=resolved.jpegQuality??82;
+    panel.querySelector('[data-quality-current]').textContent=`目前：${QUALITY_PRESETS[preset].label}`;
+    panel.querySelector('[data-quality-description]').textContent=preset==='custom'
+      ?`圖片高於 ${resolved.thresholdDpi} DPI 才縮至 ${resolved.targetDpi} DPI；JPEG 品質 ${resolved.jpegQuality}。`
+      :QUALITY_PRESETS[preset].description;
+  }
   updatePdfLossyWarning();
 }
-function saveQualityFromControls(){
-  qualitySettings=saveQualitySettings({
-    preset:$('quality-preset').value,
-    custom:{targetDpi:$('quality-target-dpi').value,thresholdDpi:$('quality-threshold-dpi').value,jpegQuality:$('quality-jpeg').value}
-  });
+function saveQualityFromControls(event){
+  qualitySettings=saveQualitySettings(readQualityPanel(event.currentTarget.closest('[data-quality-settings]')));
   renderQualitySettings();clearOutput();clearPdfOutput();
 }
 function setWorkspace(workspace,{scroll=false,updateHash=true}={}){
@@ -284,11 +291,13 @@ for(const el of document.querySelectorAll('#epub-workspace .options-panel input'
 for(const el of document.querySelectorAll('#pdf-optimizer .options-panel input'))el.addEventListener('input',()=>clearPdfOutput());
 $('convert-button').addEventListener('click',convert);
 $('download-button').addEventListener('click',download);
-$('quality-preset').addEventListener('change',()=>{
-  qualitySettings=saveQualitySettings({preset:$('quality-preset').value,custom:qualitySettings.custom});
-  renderQualitySettings();clearOutput();clearPdfOutput();
-});
-for(const id of ['quality-target-dpi','quality-threshold-dpi','quality-jpeg'])$(id).addEventListener('change',saveQualityFromControls);
+for(const panel of document.querySelectorAll('[data-quality-settings]')){
+  panel.querySelector('[data-quality-preset]').addEventListener('change',event=>{
+    qualitySettings=saveQualitySettings(readQualityPanel(panel));
+    renderQualitySettings();clearOutput();clearPdfOutput();
+  });
+  panel.querySelectorAll('[data-quality-input]').forEach(input=>input.addEventListener('change',saveQualityFromControls));
+}
 $('pdf-lossy-images').addEventListener('change',()=>{updatePdfLossyWarning();clearPdfOutput();});
 document.querySelectorAll('#epub-workspace .options-panel input').forEach(input=>input.addEventListener('change',clearOutput));
 $('pdf-optimize-button').addEventListener('click',optimizePdf);
