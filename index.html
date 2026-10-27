@@ -4,14 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f7f8fb" />
-  <meta name="description" content="完全在瀏覽器本機運作的離線 EPUB 轉 PDF 工具，支援繁體中文與可搜尋 PDF。" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'" />
+  <meta name="description" content="完全在瀏覽器本機運作的離線 EPUB 轉 PDF 與 PDF 最佳化工具，支援繁體中文與可搜尋 PDF。" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="optimizer.css" />
   <script src="theme.js"></script>
-  <title>EPUB PDF Studio — 離線電子書轉檔</title>
+  <title>EPUB PDF Studio — EPUB 轉 PDF 與 PDF 最佳化</title>
 </head>
 <body>
   <div class="app-shell">
@@ -21,18 +22,26 @@
         <span>EPUB <b>PDF</b><small>STUDIO</small></span>
       </a>
       <div class="side-label">工作區</div>
-      <nav><a class="nav-current" href="#workspace"><span class="nav-glyph">▣</span> EPUB 轉 PDF</a><a href="#instructions"><span class="nav-glyph">☰</span> 使用說明</a></nav>
+      <nav aria-label="工作區"><a class="nav-current" href="#epub-workspace" data-workspace-link="epub"><span class="nav-glyph">▣</span> EPUB 轉 PDF</a><a href="#pdf-optimizer" data-workspace-link="pdf"><span class="nav-glyph">⇩</span> PDF 最佳化</a><a href="#instructions" data-workspace-link="help"><span class="nav-glyph">☰</span> 使用說明</a></nav>
       <div class="sidebar-spacer"></div>
       <div class="side-card"><span class="side-card-icon">◈</span><strong>檔案只留在你的電腦</strong><p>不需要帳號、雲端上傳或後端伺服器。轉換在本機瀏覽器執行。</p></div>
       <div class="side-bottom"><span class="status-pip"></span><span id="offline-label">本機處理 · 偵測離線狀態中</span></div>
     </aside>
     <main id="workspace" class="main">
-      <header class="main-top"><div class="crumb">工具集 <span>›</span> EPUB 轉 PDF</div><div class="top-meta"><span class="desktop-only">PUBLIC REPO READY</span><div class="theme-switcher" id="theme-switcher" role="group" aria-label="外觀模式">
+      <header class="main-top"><div class="crumb">工具集 <span>›</span> <span id="workspace-crumb">EPUB 轉 PDF</span></div><div class="top-meta"><span class="desktop-only">PUBLIC REPO READY</span><div class="theme-switcher" id="theme-switcher" role="group" aria-label="外觀模式">
         <button class="theme-choice" type="button" data-theme-choice="auto" aria-label="自動，跟隨系統" aria-pressed="true" title="跟隨系統外觀"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.75" y="3.25" width="14.5" height="10.5" rx="2"/><path d="M7 16.75h6m-3-3v3"/></svg><span>自動</span></button>
         <button class="theme-choice" type="button" data-theme-choice="light" aria-label="淺色模式" aria-pressed="false" title="淺色模式"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.25"/><path d="M10 1.75v2m0 12.5v2m8.25-8.25h-2m-12.5 0h-2m14.08-5.83-1.42 1.42M5.59 14.41l-1.42 1.42m11.66 0-1.42-1.42M5.59 5.59 4.17 4.17"/></svg><span>淺色</span></button>
         <button class="theme-choice" type="button" data-theme-choice="dark" aria-label="深色模式" aria-pressed="false" title="深色模式"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.7 12.8A7.4 7.4 0 0 1 7.2 3.3 7.45 7.45 0 1 0 16.7 12.8Z"/></svg><span>深色</span></button>
       </div><span class="top-avatar" aria-hidden="true">EP</span></div></header>
       <div class="main-inner">
+        <nav class="mobile-tool-switch" aria-label="工具工作區"><button type="button" data-workspace="epub" aria-pressed="true">EPUB 轉 PDF</button><button type="button" data-workspace="pdf" aria-pressed="false">PDF 最佳化</button></nav>
+        <section class="panel quality-panel" aria-labelledby="quality-heading">
+          <div class="quality-panel-head"><div><h2 id="quality-heading">圖片品質設定</h2><p>共用於 EPUB 轉 PDF 與 PDF 最佳化</p></div><span class="quality-default" id="quality-current-label">目前：原始品質</span></div>
+          <div class="quality-control-grid"><label class="quality-select-label" for="quality-preset">品質預設<select id="quality-preset"><option value="original">原始品質</option><option value="high">高品質</option><option value="balanced">均衡</option><option value="compression">高壓縮</option><option value="custom">自訂</option></select></label><p class="quality-description" id="quality-description" aria-live="polite"></p></div>
+          <div class="quality-custom" id="quality-custom" hidden><label for="quality-target-dpi">目標 DPI<input id="quality-target-dpi" type="number" min="72" max="1200" step="1" value="180" /></label><label for="quality-threshold-dpi">啟動門檻 DPI<input id="quality-threshold-dpi" type="number" min="72" max="2400" step="1" value="270" /></label><label for="quality-jpeg">JPEG 品質<input id="quality-jpeg" type="number" min="40" max="100" step="1" value="82" /></label></div>
+          <p class="quality-note">EPUB 會套用 DPI 與 JPEG 品質；PDF 引擎不會下採樣圖片，只有另行勾選有損圖片處理時才使用 JPEG 品質。</p>
+        </section>
+        <section id="epub-workspace" class="workspace-view" aria-label="EPUB 轉 PDF 工作區">
         <div class="eyebrow"><span class="eyebrow-dot"></span> LOCAL-FIRST CONVERTER <span class="eyebrow-line"></span> 01 / 03</div>
         <div class="hero"><div><h1>把電子書，<span>變成你想要的版面。</span></h1><p>匯入 EPUB，自訂紙張、字體與排版，直接轉成可搜尋、可下載的 PDF。全程離線處理，無須上傳任何檔案。</p></div><div class="hero-art" aria-hidden="true"><div class="book-illustration"><div class="book-cover"><div class="book-mark"></div><div class="book-lines"><i></i><i></i><i></i></div><b>EPUB</b></div><div class="arrow-shape">➜</div><div class="paper-illustration"><span class="paper-fold"></span><div class="paper-lines"><i></i><i></i><i></i><i></i></div><b>PDF</b></div></div></div></div>
         <div class="two-col">
@@ -71,7 +80,32 @@
           <div id="error-panel" class="error-panel" hidden role="alert"></div>
         </section>
         <section id="instructions" class="instructions"><div class="instruction-head"><h3>簡單三步驟，就能完成轉換</h3><p>所有動作都在你的瀏覽器中完成。</p></div><div class="instruction-cards"><div><b>01</b><strong>匯入 EPUB</strong><p>選取電腦內的無 DRM EPUB 電子書。</p></div><div><b>02</b><strong>設定排版</strong><p>挑選紙張大小、字級與頁面設定。</p></div><div><b>03</b><strong>下載 PDF</strong><p>轉換完成後直接儲存至本機。</p></div></div></section>
-        <footer class="footer"><span>EPUB PDF Studio · v1.3.0 · Commit 2026-10-26 21:17:30 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
+        </section>
+        <section id="pdf-optimizer" class="workspace-view" aria-label="PDF 最佳化工作區" hidden>
+          <div class="eyebrow"><span class="eyebrow-dot"></span> LOCAL PDF OPTIMIZER <span class="eyebrow-line"></span> 02 / 03</div>
+          <div class="hero"><div><h1>最佳化 PDF，<span>保留原始文件。</span></h1><p>在本機重新整理 PDF 結構與無損壓縮 stream；原始檔不會被覆寫。圖片重壓縮需額外勾選，並可隨時下載原檔。</p></div></div>
+          <div class="two-col pdf-optimizer-grid">
+            <section class="panel input-panel" aria-labelledby="pdf-upload-heading">
+              <div class="panel-heading"><span class="step-number">01</span><div><h2 id="pdf-upload-heading">選擇 PDF</h2><p>支援一般未加密或可提供密碼的 PDF</p></div></div>
+              <div class="dropzone" id="pdf-dropzone" role="button" tabindex="0" aria-label="選擇 PDF 檔案，可拖曳檔案至此"><div class="upload-visual pdf-upload-visual" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M13 5h15l9 9v28H13a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4Z" stroke="currentColor" stroke-width="2"/><path d="M28 5v10h9M16 26h16M16 32h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15 20h18" stroke="currentColor" stroke-width="2"/></svg></div><strong>拖曳 PDF 檔案到這裡</strong><span>或選取電腦內的 PDF</span><button class="outline-button" id="pdf-choose-button" type="button">選擇 PDF 檔案 <span aria-hidden="true">↗</span></button><input type="file" id="pdf-file-input" accept=".pdf,application/pdf" hidden /><small>檔案只會在此瀏覽器處理</small></div>
+              <div class="book-details pdf-file-details" id="pdf-file-details" hidden><div class="pdf-symbol">PDF</div><div class="book-meta"><strong id="pdf-file-name">—</strong><span id="pdf-file-size">—</span><small id="pdf-file-pages">頁數將於檢查後顯示</small></div><button class="replace-button" id="pdf-replace-button" type="button" aria-label="更換 PDF 檔案" title="更換檔案">↻</button></div>
+              <p class="optimizer-integrity-note">已簽章 PDF 會停止處理，以免簽章失效。檢查到結構警告、密碼錯誤或無法支援的文件時，會保留原始檔並顯示原因。</p>
+            </section>
+            <section class="panel options-panel" aria-labelledby="pdf-options-heading">
+              <div class="panel-heading"><span class="step-number">02</span><div><h2 id="pdf-options-heading">最佳化選項</h2><p>無損處理預設開啟；有損圖片處理為選用</p></div></div>
+              <div class="pdf-safety-box"><strong>原始品質</strong><p>壓縮可解碼的 PDF stream，保留既有圖片編碼，不調整圖片解析度。</p></div>
+              <label class="toggle-row pdf-lossy-toggle"><span><strong>允許圖片以 JPEG 有損重壓縮</strong><small>非 JPEG 須符合 qpdf 預設尺寸門檻且縮小才轉換；既有 JPEG 也可能再次編碼，不會下採樣</small></span><input type="checkbox" id="pdf-lossy-images" /><i aria-hidden="true"></i></label>
+              <p class="pdf-lossy-warning" id="pdf-lossy-warning" hidden>此選項可能降低圖片品質或合併透明效果。若保留掃描文字、線稿、OCR 或透明圖層很重要，請勿勾選。</p>
+              <details class="pdf-advanced"><summary>進階設定</summary><label class="pdf-password-label" for="pdf-password">開啟密碼（選填）<input id="pdf-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="只在本次處理使用，不會儲存" /></label><label class="toggle-row"><span><strong>產生 PDF 物件串流</strong><small>可再縮小結構；PDF 版本可能提升至 1.5</small></span><input type="checkbox" id="pdf-object-streams" /><i aria-hidden="true"></i></label></details>
+            </section>
+          </div>
+          <section class="panel export-panel" aria-labelledby="pdf-export-heading"><div class="export-head"><div class="panel-heading"><span class="step-number">03</span><div><h2 id="pdf-export-heading">最佳化與下載</h2><p>輸出成新檔，不會覆寫所選 PDF</p></div></div><div class="export-controls"><span class="export-note"><span aria-hidden="true">◉</span> 100% 本機處理</span><button id="pdf-optimize-button" class="primary-button" type="button" disabled><span id="pdf-optimize-label">開始最佳化 PDF</span><span class="button-arrow">→</span></button><button id="pdf-cancel-button" class="outline-button pdf-cancel-button" type="button" hidden>取消</button></div></div>
+            <div id="pdf-status-panel" class="status-panel" hidden role="status" aria-live="polite"><div class="status-head"><span id="pdf-status-text">準備中…</span><b id="pdf-status-percent">0%</b></div><div class="progress-track"><div id="pdf-progress-fill"></div></div></div>
+            <div id="pdf-result-panel" class="result-panel pdf-result-panel" hidden><div class="result-icon">✓</div><div class="result-text"><strong>最佳化檔案已產生</strong><span id="pdf-result-stats">—</span></div><div class="pdf-download-actions"><button id="pdf-download-button" class="download-button" type="button">下載最佳化 PDF</button><button id="pdf-original-download-button" class="secondary-download-button" type="button">下載原始 PDF</button></div></div>
+            <div id="pdf-warning-panel" class="warning-panel" hidden></div><div id="pdf-error-panel" class="error-panel" hidden role="alert"></div>
+          </section>
+        </section>
+        <footer class="footer"><span>EPUB PDF Studio · v1.4.0 · Commit 2026-10-27 14:22:33 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
       </div>
     </main>
   </div>

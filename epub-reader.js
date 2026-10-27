@@ -346,7 +346,7 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
   const opts={...options,width,height};
   if((opts.marginMM*72/25.4)*2+60>=width)throw new Error('紙張寬度太窄，請縮小頁邊距');
   const writer=new PdfWriter();
-  const fontRef=addEmbeddedFont(writer,pdfFont);
+  const fontRef=await addEmbeddedFont(writer,pdfFont);
   const layout=new PdfLayout(writer,fontRef,opts,info);
   const warnings=[];
   let imageCount=0;
