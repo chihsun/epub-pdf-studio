@@ -64,7 +64,7 @@ function assertPdf(bytes){
 
 function cleanup(paths){
   for(const path of paths){
-    try{if(qpdf?.FS?.analyzePath(path).exists)qpdf.FS.unlink(path);}catch{}
+    try{qpdf?.FS?.stat(path);qpdf.FS.unlink(path);}catch{}
   }
 }
 
@@ -141,7 +141,8 @@ async function optimize(message){
       error.code='PDF_OPTIMIZE_FAILED';
       throw error;
     }
-    if(!qpdf.FS.analyzePath(outputPath).exists)throw new Error('qpdf 沒有產生輸出 PDF，原始檔未修改');
+    try{qpdf.FS.stat(outputPath);}
+    catch{throw new Error('qpdf 沒有產生輸出 PDF，原始檔未修改');}
     const output=qpdf.FS.readFile(outputPath,{encoding:'binary'});
     const outputBytes=new Uint8Array(output.buffer.slice(output.byteOffset,output.byteOffset+output.byteLength));
     if(!outputBytes.length||!containsAscii(outputBytes.subarray(0,Math.min(outputBytes.length,1024)),'%PDF-'))throw new Error('最佳化輸出不是有效的 PDF，原始檔未修改');
