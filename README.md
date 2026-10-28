@@ -4,6 +4,10 @@
 
 ## 功能
 
+- **固定版面 EPUB 圖片最佳化**：另存新的最佳化 EPUB，保持 OPF、viewport、spine、閱讀方向與 spread 宣告不變。JPEG 品質預設 80；JPEG 有損重壓縮和降採樣都由使用者明確啟用，降採樣預設關閉。
+- 固定版面最佳化只處理可辨識且未加密、未與可重排頁共用的 JPEG；只有編碼後變小才替換。PNG（包含透明 PNG）、GIF、SVG（包含內嵌 base64 圖片）與其他格式原樣保留。重新編碼會移除或改變部分 JPEG metadata，可能包括 EXIF 位置或裝置資訊。
+- 最佳化前拒絕含數位簽章的 EPUB，略過加密資源；輸出前重新載入封裝並驗證 mimetype、OPF 與 manifest 資源引用。原始檔不會被覆寫。
+
 - 本機上傳 EPUB、拖曳上傳，讀取書名、作者、書籍章節數、版面資訊。
 - 紙張尺寸：**原書尺寸（固定版面且有 viewport 時）**、A4（一般預設）、A5、B5、Letter、6 × 9 英寸。
 - 直式、橫式、自動紙張方向；字級、行距、頁邊距。
@@ -64,6 +68,7 @@ epub-pdf-studio/
 ├── theme.js               # 自動、淺色與深色模式
 ├── theme.css              # 主題色彩與切換控制
 ├── optimizer.css          # PDF 最佳化工作區樣式
+├── epub-image-optimizer.js # 固定版面 EPUB JPEG 最佳化與封裝驗證
 ├── epub-reader.js         # JSZip 解 EPUB、章節遍歷與簡化排版
 ├── pdf-engine.js          # 原生 PDF 生成、TrueType 字型嵌入與文字繪製
 ├── pdf-optimizer.js       # PDF 最佳化 Worker 呼叫介面
@@ -99,6 +104,8 @@ epub-pdf-studio/
 - `Service Worker` 在 GitHub Pages 或 localhost 的安全環境運作；**第一次造訪必須連網**。如在 Safari 的私人瀏覽、無痕視窗，或瀏覽器清空網站資料，快取可能不保留。
 - 此工具處理的是使用者自行提供的檔案，請確認你有權將書籍轉存或分享；公開部署網站不表示可以公開散布受著作權保護的 EPUB / PDF 書籍。
 
+固定版面 EPUB 圖片最佳化目前只重新編碼可解碼的 JPEG；PNG、GIF、SVG、未知格式、加密資源及與可重排頁共用的圖片保持原樣。帶數位簽章的 EPUB 會拒絕處理，以免輸出失效簽章。固定版面圖片最佳化不會改動 EPUB 閱讀結構；fixed-layout EPUB 轉 PDF 的複合頁面渲染與雙頁合併不包含在此功能。JPEG 重編碼不保留 EXIF/XMP/ICC metadata，目前沒有 metadata 保留或選擇性清除開關。
+
 ## 第三方授權
 
 - `vendor/jszip.min.js`：JSZip 3.10.1，MIT 或 GPL-3.0-or-later 雙授權，本專案依 **MIT** 使用，詳見 `licenses/JSZIP-LICENSE.md`。
@@ -108,6 +115,8 @@ epub-pdf-studio/
 - 本專案原創網站程式碼採 MIT 授權，詳見 `LICENSE`。
 
 ## 測試資料與手動檢查
+
+固定版面 EPUB 圖片最佳化請另以固定版面 JPEG EPUB 手動檢查：原檔未被覆寫、ZIP 內 mimetype/OPF 資源仍可讀、JPEG 只有選取後才重壓縮、PNG/GIF/SVG 保持原樣，以及降採樣預設關閉。
 
 `tests/` 目前只保留一個小型手動測試素材 `sample.epub`，本專案沒有自動化測試框架。測試素材內容與維護方式見 [`tests/README.md`](tests/README.md)。實際書籍、PDF 測試檔與轉檔輸出請留在 repository 外。
 

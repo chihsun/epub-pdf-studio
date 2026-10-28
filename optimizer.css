@@ -36,6 +36,12 @@
 .pdf-result-panel{align-items:flex-start}
 .pdf-download-actions{display:flex;gap:8px;align-items:center}
 .pdf-result-panel .download-button{white-space:nowrap}
+.epub-opt-dpi-label{display:grid;grid-template-columns:minmax(0,1fr) 130px;align-items:center;gap:12px;margin:3px 0 16px;color:var(--ui-heading);font-size:10px;font-weight:720}
+#epub-opt-jpeg-quality,#epub-opt-target-dpi{width:100%;min-height:39px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);color:var(--ui-text);padding:8px 10px;font:inherit;font-weight:550;outline:none}
+#epub-opt-jpeg-quality:focus-visible,#epub-opt-target-dpi:focus-visible{border-color:var(--ui-accent-strong);box-shadow:0 0 0 3px color-mix(in srgb,var(--ui-accent) 20%,transparent)}
+#epub-opt-target-dpi:disabled{opacity:.55;cursor:not-allowed}
+.form-group>small{display:block;margin-top:7px;color:var(--ui-muted);font-size:10px;line-height:1.7}
+#epub-opt-progress-fill{height:100%;width:0;border-radius:20px;background:linear-gradient(90deg,var(--ui-accent-strong),#5cc8ba);transition:width .2s}
 .secondary-download-button{border:1px solid var(--ui-border);border-radius:8px;padding:11px 13px;background:var(--ui-surface);color:var(--ui-heading);font-size:10px;font-weight:720;white-space:nowrap}
 .secondary-download-button:hover{border-color:var(--ui-accent-strong);color:var(--ui-accent)}
 .pdf-status-panel .progress-track{position:relative}
@@ -64,6 +70,7 @@
   .quality-control-grid{grid-template-columns:1fr;gap:9px}
   .quality-custom{grid-template-columns:1fr;gap:10px}
   .quality-custom label{grid-template-columns:1fr 115px;align-items:center}
+  .epub-opt-dpi-label{grid-template-columns:1fr 110px}
   .pdf-result-panel{align-items:flex-start}
   .pdf-download-actions{width:100%;flex-direction:column;align-items:stretch}
   .pdf-download-actions button{width:100%}

@@ -1,10 +1,11 @@
 import {inspectEpub,convertEpub} from './epub-reader.js';
+import {inspectFixedLayoutEpub,optimizeFixedLayoutEpub} from './epub-image-optimizer.js';
 import {loadPdfFont} from './pdf-engine.js';
 import {QUALITY_PRESETS,loadQualitySettings,saveQualitySettings,resolveQualitySettings} from './quality-presets.js';
 import {startPdfOptimization} from './pdf-optimizer.js';
 
 const $=id=>document.getElementById(id);
-const state={book:null,file:null,output:null,font:null,loading:false,pdfFile:null,pdfOutput:null,pdfTask:null,pdfLoading:false};
+const state={book:null,file:null,output:null,font:null,loading:false,pdfFile:null,pdfOutput:null,pdfTask:null,pdfLoading:false,imageBook:null,imageOutput:null,imageLoading:false};
 let qualitySettings=loadQualitySettings();
 const FONT_URL=new URL('./fonts/reading-ming.ttf',import.meta.url).href;
 const SIZE_NAMES={original:'原書尺寸',A4:'A4',A5:'A5',B5:'B5',Letter:'Letter','6x9':'6 × 9'};
@@ -103,13 +104,15 @@ function saveQualityFromControls(event){
   renderQualitySettings();clearOutput();clearPdfOutput();
 }
 function setWorkspace(workspace,{scroll=false,updateHash=true}={}){
-  const pdf=workspace==='pdf';
-  $('epub-workspace').hidden=pdf;
-  $('pdf-optimizer').hidden=!pdf;
-  $('workspace-crumb').textContent=pdf?'PDF 最佳化':'EPUB 轉 PDF';
-  document.querySelectorAll('[data-workspace]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.workspace===(pdf?'pdf':'epub'))));
-  document.querySelectorAll('[data-workspace-link]').forEach(link=>link.classList.toggle('nav-current',link.dataset.workspaceLink===(pdf?'pdf':'epub')));
-  if(updateHash)history.replaceState(null,'',pdf?'#pdf-optimizer':'#epub-workspace');
+  const current=['pdf','epub-opt'].includes(workspace)?workspace:'epub';
+  $('epub-workspace').hidden=current!=='epub';
+  $('pdf-optimizer').hidden=current!=='pdf';
+  $('epub-image-optimizer').hidden=current!=='epub-opt';
+  const labels={epub:'EPUB 轉 PDF',pdf:'PDF 最佳化','epub-opt':'EPUB 圖片最佳化'};
+  $('workspace-crumb').textContent=labels[current];
+  document.querySelectorAll('[data-workspace]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.workspace===current)));
+  document.querySelectorAll('[data-workspace-link]').forEach(link=>link.classList.toggle('nav-current',link.dataset.workspaceLink===current));
+  if(updateHash)history.replaceState(null,'',current==='pdf'?'#pdf-optimizer':current==='epub-opt'?'#epub-image-optimizer':'#epub-workspace');
   if(scroll)window.scrollTo({top:0,behavior:'smooth'});
 }
 function bindWorkspaceNavigation(){
@@ -171,6 +174,66 @@ function download(){
   a.href=url;a.download=state.output.fileName;a.style.display='none';
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+function clearImageOptimizerOutput(){
+  state.imageOutput=null;
+  $('epub-opt-result-panel').hidden=true;$('epub-opt-warning-panel').hidden=true;$('epub-opt-error-panel').hidden=true;
+}
+function updateImageOptimizerButton(){
+  const allowLossy=$('epub-opt-compress-jpeg').checked;
+  const downsample=$('epub-opt-downsample');
+  downsample.disabled=!allowLossy;
+  if(!allowLossy)downsample.checked=false;
+  $('epub-opt-jpeg-quality').disabled=!allowLossy;
+  $('epub-optimize-button').disabled=!state.imageBook||state.imageLoading||!allowLossy;
+  $('epub-opt-target-dpi').disabled=!allowLossy||!downsample.checked;
+}
+async function acceptImageEpub(file){
+  if(!file||state.imageLoading)return;
+  state.imageLoading=true;state.imageBook=null;clearImageOptimizerOutput();updateImageOptimizerButton();
+  $('epub-opt-compress-jpeg').checked=false;$('epub-opt-downsample').checked=false;
+  $('epub-opt-jpeg-quality').value='80';$('epub-opt-target-dpi').value='300';
+  $('epub-opt-file-details').hidden=true;$('epub-opt-error-panel').hidden=true;$('epub-opt-warning-panel').hidden=true;
+  $('epub-opt-status-panel').hidden=false;$('epub-opt-status-text').textContent='正在檢查 EPUB 封裝與固定版面資料';$('epub-opt-status-percent').textContent='5%';$('epub-opt-progress-fill').style.width='5%';
+  try{
+    const book=await inspectFixedLayoutEpub(file);
+    state.imageBook=book;
+    $('epub-opt-file-name').textContent=file.name;
+    $('epub-opt-file-size').textContent=(file.size/1024/1024).toFixed(1)+' MB · 本機檔案';
+    $('epub-opt-file-info').textContent=book.title+' · '+book.fixedPageCount+' 個固定版面頁 · '+book.candidates.length+' 張可處理 JPEG · '+book.spreadCount+' 個 spread 標記 · 閱讀方向 '+book.direction.toUpperCase();
+    $('epub-opt-file-details').hidden=false;$('epub-opt-status-panel').hidden=true;
+  }catch(error){
+    $('epub-opt-error-panel').textContent=error?.message||'無法檢查 EPUB，原始檔未修改';$('epub-opt-error-panel').hidden=false;$('epub-opt-status-panel').hidden=true;
+  }
+  state.imageLoading=false;
+  updateImageOptimizerButton();
+}
+async function optimizeImageEpub(){
+  if(!state.imageBook||state.imageLoading)return;
+  state.imageLoading=true;clearImageOptimizerOutput();updateImageOptimizerButton();
+  $('epub-opt-status-panel').hidden=false;
+  try{
+    const options={compressJpeg:$('epub-opt-compress-jpeg').checked,quality:Number($('epub-opt-jpeg-quality').value),downsample:$('epub-opt-downsample').checked,targetDpi:Number($('epub-opt-target-dpi').value)};
+    const result=await optimizeFixedLayoutEpub(state.imageBook,options,(progress,message)=>{
+      $('epub-opt-status-text').textContent=message;$('epub-opt-status-percent').textContent=Math.round(progress*100)+'%';$('epub-opt-progress-fill').style.width=Math.round(progress*100)+'%';
+    });
+    state.imageOutput=result;
+    const difference=result.originalSize-result.outputSize;
+    const change=difference>0?'減少 '+(difference/result.originalSize*100).toFixed(1)+'%':difference<0?'增加 '+(-difference/result.originalSize*100).toFixed(1)+'%':'大小相同';
+    $('epub-opt-result-stats').textContent=result.optimized+' 張 JPEG 已縮小 · '+(result.originalSize/1024/1024).toFixed(1)+' MB → '+(result.outputSize/1024/1024).toFixed(1)+' MB · '+change;
+    $('epub-opt-result-panel').hidden=false;
+    if(result.warnings.length){$('epub-opt-warning-panel').textContent=result.warnings.join('；');$('epub-opt-warning-panel').hidden=false;}
+  }catch(error){
+    $('epub-opt-error-panel').textContent=error?.message||'最佳化失敗；原始 EPUB 未修改';$('epub-opt-error-panel').hidden=false;
+  }finally{
+    state.imageLoading=false;$('epub-opt-status-panel').hidden=true;updateImageOptimizerButton();
+  }
+}
+function downloadOptimizedEpub(){
+  if(!state.imageOutput)return;
+  const url=URL.createObjectURL(state.imageOutput.blob);
+  const link=document.createElement('a');link.href=url;link.download=state.imageOutput.fileName;link.style.display='none';
+  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 const formatBytes=bytes=>bytes>=1024*1024?`${(bytes/1024/1024).toFixed(2)} MB`:`${(bytes/1024).toFixed(1)} KB`;
 function clearPdfMessages(){
@@ -307,6 +370,20 @@ $('pdf-original-download-button').addEventListener('click',downloadOriginalPdf);
 $('pdf-choose-button').addEventListener('click',event=>{event.stopPropagation();$('pdf-file-input').click();});
 $('pdf-replace-button').addEventListener('click',()=>$('pdf-file-input').click());
 $('pdf-file-input').addEventListener('change',event=>{const file=event.target.files?.[0];if(file)acceptPdfFile(file);event.target.value='';});
+const epubOptimizerZone=$('epub-opt-dropzone');
+$('epub-opt-choose-button').addEventListener('click',event=>{event.stopPropagation();$('epub-opt-file-input').click();});
+$('epub-opt-replace-button').addEventListener('click',()=>$('epub-opt-file-input').click());
+$('epub-opt-file-input').addEventListener('change',event=>{const file=event.target.files?.[0];if(file)acceptImageEpub(file);event.target.value='';});
+epubOptimizerZone.addEventListener('click',event=>{if(!event.target.closest('button'))$('epub-opt-file-input').click();});
+epubOptimizerZone.addEventListener('keydown',event=>{if(event.target!==epubOptimizerZone)return;if(event.key==='Enter'||event.key===' '){event.preventDefault();$('epub-opt-file-input').click();}});
+for(const name of ['dragenter','dragover'])epubOptimizerZone.addEventListener(name,event=>{event.preventDefault();epubOptimizerZone.classList.add('drag-over');});
+for(const name of ['dragleave','drop'])epubOptimizerZone.addEventListener(name,event=>{event.preventDefault();epubOptimizerZone.classList.remove('drag-over');});
+epubOptimizerZone.addEventListener('drop',event=>{const file=event.dataTransfer?.files?.[0];if(file)acceptImageEpub(file);});
+$('epub-opt-compress-jpeg').addEventListener('change',()=>{clearImageOptimizerOutput();updateImageOptimizerButton();});
+$('epub-opt-downsample').addEventListener('change',()=>{clearImageOptimizerOutput();updateImageOptimizerButton();});
+for(const input of [$('epub-opt-jpeg-quality'),$('epub-opt-target-dpi')])input.addEventListener('input',clearImageOptimizerOutput);
+$('epub-optimize-button').addEventListener('click',optimizeImageEpub);
+$('epub-opt-download-button').addEventListener('click',downloadOptimizedEpub);
 const pdfZone=$('pdf-dropzone');
 pdfZone.addEventListener('click',event=>{if(!event.target.closest('button'))$('pdf-file-input').click();});
 pdfZone.addEventListener('keydown',event=>{if(event.target!==pdfZone)return;if(event.key==='Enter'||event.key===' '){event.preventDefault();$('pdf-file-input').click();}});
@@ -315,5 +392,7 @@ for(const name of ['dragleave','drop'])pdfZone.addEventListener(name,event=>{eve
 pdfZone.addEventListener('drop',event=>{const file=event.dataTransfer?.files?.[0];if(file)acceptPdfFile(file);});
 bindWorkspaceNavigation();
 renderQualitySettings();
+updateImageOptimizerButton();
 if(location.hash==='#pdf-optimizer')setWorkspace('pdf',{updateHash:false});
+if(location.hash==='#epub-image-optimizer')setWorkspace('epub-opt',{updateHash:false});
 updateRangeLabels();registerPWA();

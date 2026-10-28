@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f7f8fb" />
-  <meta name="description" content="完全在瀏覽器本機運作的離線 EPUB 轉 PDF 與 PDF 最佳化工具，支援繁體中文與可搜尋 PDF。" />
+  <meta name="description" content="在瀏覽器本機完成 EPUB 轉 PDF、固定版面 EPUB 圖片最佳化與 PDF 最佳化，支援可搜尋中文字與離線使用。" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
@@ -22,7 +22,7 @@
         <span>EPUB <b>PDF</b><small>STUDIO</small></span>
       </a>
       <div class="side-label">工作區</div>
-      <nav aria-label="工作區"><a class="nav-current" href="#epub-workspace" data-workspace-link="epub"><span class="nav-glyph">▣</span> EPUB 轉 PDF</a><a href="#pdf-optimizer" data-workspace-link="pdf"><span class="nav-glyph">⇩</span> PDF 最佳化</a><a href="#instructions" data-workspace-link="help"><span class="nav-glyph">☰</span> 使用說明</a></nav>
+      <nav aria-label="工作區"><a class="nav-current" href="#epub-workspace" data-workspace-link="epub"><span class="nav-glyph">▣</span> EPUB 轉 PDF</a><a href="#pdf-optimizer" data-workspace-link="pdf"><span class="nav-glyph">⇩</span> PDF 最佳化</a><a href="#epub-image-optimizer" data-workspace-link="epub-opt"><span class="nav-glyph">▧</span> EPUB 圖片最佳化</a><a href="#instructions" data-workspace-link="help"><span class="nav-glyph">☰</span> 使用說明</a></nav>
       <div class="sidebar-spacer"></div>
       <div class="side-card"><span class="side-card-icon">◈</span><strong>檔案只留在你的電腦</strong><p>不需要帳號、雲端上傳或後端伺服器。轉換在本機瀏覽器執行。</p></div>
       <div class="side-bottom"><span class="status-pip"></span><span id="offline-label">本機處理 · 偵測離線狀態中</span></div>
@@ -111,7 +111,41 @@
             <div id="pdf-warning-panel" class="warning-panel" hidden></div><div id="pdf-error-panel" class="error-panel" hidden role="alert"></div>
           </section>
         </section>
-        <footer class="footer"><span>EPUB PDF Studio · v1.4.4 · Commit 2026-10-27 20:33:04 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
+        <section id="epub-image-optimizer" class="workspace-view" aria-label="EPUB 圖片最佳化工作區" hidden>
+          <div class="eyebrow"><span class="eyebrow-dot"></span> LOCAL EPUB IMAGE OPTIMIZER <span class="eyebrow-line"></span> FIXED LAYOUT</div>
+          <div class="hero"><div><h1>最佳化固定版面 EPUB，<span>保留原始閱讀結構。</span></h1><p>只輸出新的 EPUB 檔案；保留原始 viewport、spine 順序、閱讀方向與 spread 設定。JPEG 品質預設 80，不預設縮小像素；只有你明確啟用降採樣時才依頁面顯示尺寸調整。</p></div></div>
+          <div class="two-col pdf-optimizer-grid">
+            <section class="panel input-panel" aria-labelledby="epub-opt-upload-heading">
+              <div class="panel-heading"><span class="step-number">01</span><div><h2 id="epub-opt-upload-heading">選擇固定版面 EPUB</h2><p>僅支援未加密 ZIP 封裝的 EPUB</p></div></div>
+              <div class="dropzone" id="epub-opt-dropzone" role="button" tabindex="0" aria-label="選擇 EPUB 檔案，可將檔案拖曳至此">
+                <div class="upload-visual" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M10 7h19l9 9v25H10a3 3 0 0 1-3-3V10a3 3 0 0 1 3-3Z" stroke="currentColor" stroke-width="2"/><path d="M29 7v10h9M15 25h18M15 31h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+                <strong>拖曳 EPUB 檔案到這裡</strong><span>或選取電腦內的 EPUB</span>
+                <button class="outline-button" id="epub-opt-choose-button" type="button">選擇 EPUB 檔案 <span aria-hidden="true">↗</span></button>
+                <input type="file" id="epub-opt-file-input" accept=".epub,application/epub+zip" hidden />
+                <small>本機處理，不會上傳或覆寫原始檔</small>
+              </div>
+              <div class="book-details" id="epub-opt-file-details" hidden><div class="pdf-symbol">EPUB</div><div class="book-meta"><strong id="epub-opt-file-name"></strong><span id="epub-opt-file-size"></span><small id="epub-opt-file-info"></small></div><button class="replace-button" id="epub-opt-replace-button" type="button" aria-label="更換 EPUB 檔案" title="更換檔案">↻</button></div>
+            </section>
+            <section class="panel options-panel" aria-labelledby="epub-opt-options-heading">
+              <div class="panel-heading"><span class="step-number">02</span><div><h2 id="epub-opt-options-heading">圖片最佳化選項</h2><p>不修改 EPUB 閱讀順序與頁面設定</p></div></div>
+              <div class="form-group"><label class="field-label" for="epub-opt-jpeg-quality">JPEG 品質 <span>DEFAULT 80</span></label><input id="epub-opt-jpeg-quality" type="number" min="40" max="100" step="1" value="80" disabled /><small>勾選 JPEG 重壓縮後才會套用；未勾選時保留原 JPEG。</small></div>
+              <div class="form-group toggles">
+                <label class="toggle-row"><span><strong>允許 JPEG 有損重壓縮</strong><small>採用上方品質值；若編碼後沒有縮小則保留原圖</small></span><input type="checkbox" id="epub-opt-compress-jpeg" /><i aria-hidden="true"></i></label>
+                <label class="toggle-row"><span><strong>啟用圖片降採樣</strong><small>需先啟用 JPEG 有損壓縮；依 viewport 與圖片顯示大小決定縮放上限</small></span><input type="checkbox" id="epub-opt-downsample" disabled /><i aria-hidden="true"></i></label>
+              </div>
+              <label class="field-label epub-opt-dpi-label" for="epub-opt-target-dpi">降採樣目標 DPI <input id="epub-opt-target-dpi" type="number" min="72" max="1200" step="1" value="300" disabled /></label>
+              <div class="pdf-safety-box"><strong>保留項目</strong><p>原始 viewport、spine 順序、閱讀方向與 spread 標記保持不變。PNG（含透明圖）、GIF、SVG（含內嵌 base64）及未知格式保持原樣；加密圖片略過。</p></div>
+              <p class="pdf-lossy-warning">JPEG 重編碼可能改變畫質並移除 EXIF、XMP、ICC 等 metadata；若要保留原始照片資訊，請勿勾選 JPEG 重壓縮。</p>
+            </section>
+          </div>
+          <section class="panel export-panel" aria-labelledby="epub-opt-export-heading">
+            <div class="export-head"><div class="panel-heading"><span class="step-number">03</span><div><h2 id="epub-opt-export-heading">最佳化並下載</h2><p>驗證 EPUB 封裝和 OPF 資源引用後輸出新檔</p></div></div><div class="export-controls"><span class="export-note"><span aria-hidden="true">●</span> 100% 本機處理</span><button id="epub-optimize-button" class="primary-button" type="button" disabled><span>開始最佳化 EPUB</span><span class="button-arrow">→</span></button></div></div>
+            <div id="epub-opt-status-panel" class="status-panel" hidden role="status" aria-live="polite"><div class="status-head"><span id="epub-opt-status-text">準備中</span><b id="epub-opt-status-percent">0%</b></div><div class="progress-track"><div id="epub-opt-progress-fill"></div></div></div>
+            <div id="epub-opt-result-panel" class="result-panel" hidden><div class="result-icon">✓</div><div class="result-text"><strong>最佳化 EPUB 已完成</strong><span id="epub-opt-result-stats"></span></div><button id="epub-opt-download-button" class="download-button" type="button">下載最佳化 EPUB</button></div>
+            <div id="epub-opt-warning-panel" class="warning-panel" hidden></div><div id="epub-opt-error-panel" class="error-panel" hidden role="alert"></div>
+          </section>
+        </section>
+        <footer class="footer"><span>EPUB PDF Studio · v1.5.0 · Commit 2026-10-28 11:55:03 (Asia/Taipei)</span><span>靜態部署 · GitHub Pages · 無後端</span></footer>
       </div>
     </main>
   </div>
