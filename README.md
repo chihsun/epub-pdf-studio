@@ -130,6 +130,10 @@ EPUB 轉 PDF 的「內容與頁面設定」可選內建字型、EPUB 內嵌 TTF�
 
 新增 TrueType 輪廓的 OTF、WOFF 1、WOFF2 及 TTC/OTC 集合字型支援。WOFF2 使用本機離線的 woff2-encoder 2.0.0/WASM 解壓，WOFF 1 由本機程式還原；集合可選擇字體。CFF/CFF2 輪廓仍不支援。字型解壓上限 40 MB（WOFF2 解碼器上限 30 MB）；受嵌入限制的字型會拒絕處理。第三方授權見 `licenses/WOFF2-ENCODER-MIT.txt` 與 `licenses/WOFF2-ENCODER-THIRD-PARTY.txt`。
 
+### v1.5.4 字型使用模式
+
+「內容與頁面設定」新增「沿用 EPUB 字型設定」，會優先使用 CSS `@font-face` 指向的第一個 EPUB 內嵌字型；找不到或無法嵌入時使用內建繁體明體。轉換器目前以單一字型套用全書，不會逐段還原 EPUB 的多字型、字重或斜體。選用本機字型檔時才會顯示檔案選擇器。
+
 ### v1.5.3 內嵌 SVG 點陣圖片
 
 EPUB 轉 PDF 可擷取以單張滿版 PNG/JPEG 等點陣圖包裝的簡單內嵌 SVG 頁面。需要向量圖形、變形、裁切或多圖合成的 SVG 仍不支援，會略過並提示。
