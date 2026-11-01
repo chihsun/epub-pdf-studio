@@ -11,6 +11,8 @@
 .quality-control-grid{display:grid;grid-template-columns:minmax(190px,.55fr) minmax(0,1.45fr);align-items:end;gap:17px}
 .quality-select-label,.quality-custom label,.pdf-password-label{display:grid;gap:7px;color:var(--ui-heading);font-size:10px;font-weight:720}
 .quality-select-label select,.quality-custom input,.pdf-password-label input{width:100%;min-height:39px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);color:var(--ui-text);padding:8px 10px;font:inherit;font-weight:550;outline:none}
+#output-font,#font-face-index{display:block;width:100%;min-height:39px;margin:7px 0;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);color:var(--ui-text);padding:8px 10px;font:inherit;font-size:11px}
+#custom-font{display:block;width:100%;margin:8px 0;font:inherit;font-size:10px;color:var(--ui-text)}
 .quality-select-label select:focus-visible,.quality-custom input:focus-visible,.pdf-password-label input:focus-visible{border-color:var(--ui-accent-strong);box-shadow:0 0 0 3px color-mix(in srgb,var(--ui-accent) 20%,transparent)}
 .quality-description{font-size:10px;color:var(--ui-muted);line-height:1.7;margin:0 0 2px}
 .quality-custom{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:13px;padding-top:13px;border-top:1px solid var(--ui-line)}

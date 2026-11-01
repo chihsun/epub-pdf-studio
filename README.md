@@ -125,3 +125,7 @@ epub-pdf-studio/
 ### v1.5.1 字型選用
 
 EPUB 轉 PDF 的「內容與頁面設定」可選內建字型、EPUB 內嵌 TTF，或本機 TTF 檔；所選字型套用全書。會顯示 CSS font-family 宣告及內嵌資源數量，但不會自動取得只有名稱的字型，也不會逐段還原原書字型。OTF/CFF、WOFF、TTC 及含加密／混淆資源的 EPUB 字型暫不支援；嵌入限制字型會拒絕處理。本機字型不會上傳。瀏覽器不會在未授權時列出電腦所有字型，目前使用檔案選擇器取得字型資料。圖片中的文字不受字型選項影響。
+
+### v1.5.2 字型格式擴充
+
+新增 TrueType 輪廓的 OTF、WOFF 1、WOFF2 及 TTC/OTC 集合字型支援。WOFF2 使用本機離線的 woff2-encoder 2.0.0/WASM 解壓，WOFF 1 由本機程式還原；集合可選擇字體。CFF/CFF2 輪廓仍不支援。字型解壓上限 40 MB（WOFF2 解碼器上限 30 MB）；受嵌入限制的字型會拒絕處理。第三方授權見 `licenses/WOFF2-ENCODER-MIT.txt` 與 `licenses/WOFF2-ENCODER-THIRD-PARTY.txt`。

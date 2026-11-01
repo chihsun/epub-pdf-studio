@@ -12,6 +12,7 @@ const FONT_URL=new URL('./fonts/reading-ming.ttf',import.meta.url).href;
 const fontOptions=bindFontOptions();
 document.getElementById('output-font').addEventListener('change',clearOutput);
 document.getElementById('custom-font').addEventListener('change',clearOutput);
+document.getElementById('font-face-index').addEventListener('change',clearOutput);
 const SIZE_NAMES={original:'原書尺寸',A4:'A4',A5:'A5',B5:'B5',Letter:'Letter','6x9':'6 × 9'};
 const sizes=document.querySelectorAll('input[name="page-size"]');
 const activeRadio=name=>document.querySelector(`input[name="${name}"]:checked`)?.value;
