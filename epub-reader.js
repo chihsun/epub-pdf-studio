@@ -323,6 +323,32 @@ const SKIP=new Set(['script','style','noscript','iframe','object','embed','audio
 const BLOCK=new Set(['div','section','article','main','aside','header','footer','figure','figcaption','center','details','summary','body']);
 const HEADINGS=new Set(['h1','h2','h3','h4','h5','h6']);
 const INLINE=new Set(['span','a','em','i','b','strong','u','s','strike','small','big','sup','sub','code','mark','q','cite','abbr','time','font','ruby','rt','rp']);
+function svgLength(value,extent=null){
+  const text=(value||'').trim();
+  if(/^100%$/.test(text))return extent;
+  if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:px)?$/i.test(text))return null;
+  return Number.parseFloat(text);
+}
+function simpleInlineSvgImage(svg){
+  const children=Array.from(svg.children||[]);
+  if(children.length!==1||children[0].localName?.toLowerCase()!=='image')return null;
+  const image=children[0];
+  const unsupported=['transform','style','filter','mask','clip-path','opacity'];
+  if([svg,image].some(node=>unsupported.some(attribute=>node.hasAttribute(attribute))))return null;
+  const svgPreserveAspectRatio=(svg.getAttribute('preserveAspectRatio')||'').trim();
+  if(svgPreserveAspectRatio&&!/^xMidYMid(?:\s+meet)?$/i.test(svgPreserveAspectRatio))return null;
+  const preserveAspectRatio=(image.getAttribute('preserveAspectRatio')||'').trim();
+  if(preserveAspectRatio&&!/^xMidYMid(?:\s+meet)?$/i.test(preserveAspectRatio))return null;
+  const href=image.getAttribute('href')||image.getAttribute('xlink:href')||image.getAttributeNS?.('http://www.w3.org/1999/xlink','href');
+  if(!href)return null;
+  const viewBox=(svg.getAttribute('viewBox')||'').trim().split(/[\s,]+/).map(Number);
+  if(viewBox.length!==4||!viewBox.every(Number.isFinite)||viewBox[2]<=0||viewBox[3]<=0)return null;
+  const [left,top,width,height]=viewBox;
+  const x=svgLength(image.getAttribute('x')||'0'),y=svgLength(image.getAttribute('y')||'0');
+  const imageWidth=svgLength(image.getAttribute('width'),width),imageHeight=svgLength(image.getAttribute('height'),height);
+  const matches=(actual,expected)=>actual!==null&&Math.abs(actual-expected)<=Math.max(.01,Math.abs(expected)*.001);
+  return matches(x,left)&&matches(y,top)&&matches(imageWidth,width)&&matches(imageHeight,height)?image:null;
+}
 function inlineRuns(element,style={}) {
   if(element.nodeType===Node.TEXT_NODE)return [{text:element.nodeValue||'',...style}];
   if(element.nodeType!==Node.ELEMENT_NODE)return [];
@@ -380,9 +406,16 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
     if(node.nodeType!==Node.ELEMENT_NODE)return;
     markBookmarkTarget(node);
     const tag=node.localName?.toLowerCase();
+    if(tag==='svg'){
+      if(!options.includeImages)return;
+      const image=simpleInlineSvgImage(node);
+      if(image)await drawNode(image,path,depth+1);
+      else warnings.push(`僅支援單張滿版點陣圖的簡單 SVG，已略過：${path}`);
+      return;
+    }
     if(SKIP.has(tag))return;
     if(tag==='img'||tag==='image'){
-      const href=node.getAttribute('src')||node.getAttribute('href')||node.getAttribute('xlink:href');
+      const href=node.getAttribute('src')||node.getAttribute('href')||node.getAttribute('xlink:href')||node.getAttributeNS?.('http://www.w3.org/1999/xlink','href');
       await drawAsset(path,href);return;
     }
     if(HEADINGS.has(tag)){
@@ -395,12 +428,12 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
     if(tag==='p'||tag==='blockquote'||tag==='pre'||tag==='figcaption'||tag==='dt'||tag==='dd'){
       // Images embedded inside a <p> are common in illustrated EPUBs.
       // Handle them in document order instead of silently dropping them.
-      if(Array.from(node.getElementsByTagName('*')).some(el=>['img','image'].includes(el.localName?.toLowerCase()))){
+      if(Array.from(node.getElementsByTagName('*')).some(el=>['img','image','svg'].includes(el.localName?.toLowerCase()))){
         let pending=[];
         let anchorIds=bookmarkAnchorIds(node);
         const flush=()=>{const runs=normalizedRuns(pending);if(runs.length)layout.drawParagraph(runs,{indent:tag==='blockquote'?14:tag==='dd'?10:0,anchorIds});pending=[];anchorIds=[];};
         for(const child of Array.from(node.childNodes)){
-          if(child.nodeType===Node.ELEMENT_NODE && ['img','image'].includes(child.localName?.toLowerCase())){flush();await drawNode(child,path,depth+1);}
+          if(child.nodeType===Node.ELEMENT_NODE && ['img','image','svg'].includes(child.localName?.toLowerCase())){flush();await drawNode(child,path,depth+1);}
           else pending.push(...inlineRuns(child));
         }
         flush();
