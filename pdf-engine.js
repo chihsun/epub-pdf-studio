@@ -211,12 +211,16 @@ function readFontMetrics(arrayBuffer) {
 }
 
 export async function loadPdfFont(url) {
-  const response=await fetch(url);
-  if(!response.ok) throw new Error('無法載入離線中文字型');
-  const buffer=await response.arrayBuffer();
+  let buffer=url;
+  if(!(url instanceof ArrayBuffer)){
+    const response=await fetch(url);
+    if(!response.ok)throw new Error('無法載入字型');
+    buffer=await response.arrayBuffer();
+  }
   const metrics=readFontMetrics(buffer);
   const face=new FontFace('EPUBStudioMing',buffer,{style:'normal',weight:'400'});
   await face.load();
+  for(const existing of document.fonts)if(existing.family==='EPUBStudioMing')document.fonts.delete(existing);
   document.fonts.add(face);
   return {bytes:new Uint8Array(buffer),metrics};
 }

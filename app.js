@@ -1,6 +1,7 @@
 import {inspectEpub,convertEpub} from './epub-reader.js';
 import {inspectFixedLayoutEpub,optimizeFixedLayoutEpub} from './epub-image-optimizer.js';
 import {loadPdfFont} from './pdf-engine.js';
+import {bindFontOptions} from './font-options.js';
 import {QUALITY_PRESETS,loadQualitySettings,saveQualitySettings,resolveQualitySettings} from './quality-presets.js';
 import {startPdfOptimization} from './pdf-optimizer.js';
 
@@ -8,6 +9,9 @@ const $=id=>document.getElementById(id);
 const state={book:null,file:null,output:null,font:null,loading:false,pdfFile:null,pdfOutput:null,pdfTask:null,pdfLoading:false,imageBook:null,imageOutput:null,imageLoading:false};
 let qualitySettings=loadQualitySettings();
 const FONT_URL=new URL('./fonts/reading-ming.ttf',import.meta.url).href;
+const fontOptions=bindFontOptions();
+document.getElementById('output-font').addEventListener('change',clearOutput);
+document.getElementById('custom-font').addEventListener('change',clearOutput);
 const SIZE_NAMES={original:'原書尺寸',A4:'A4',A5:'A5',B5:'B5',Letter:'Letter','6x9':'6 × 9'};
 const sizes=document.querySelectorAll('input[name="page-size"]');
 const activeRadio=name=>document.querySelector(`input[name="${name}"]:checked`)?.value;
@@ -46,6 +50,7 @@ async function acceptFile(file){
   try{
     const book=await inspectEpub(file);
     state.book=book;
+    await fontOptions.inspect(book);
     $('book-title').textContent=book.title;
     $('book-author').textContent=book.author;
     const fixed=book.fixedLayout&&book.viewport;
@@ -148,7 +153,7 @@ async function convert(){
   clearMessages();
   try{
     status('正在準備中文字型',.01);
-    if(!state.font)state.font=await loadPdfFont(FONT_URL);
+    state.font=await fontOptions.load(FONT_URL);
     status('正在解析 EPUB 章節',.08);
     const output=await convertEpub(state.book,getOptions(),state.font,(progress,msg)=>status(msg,.08+progress*.92));
     state.output=output;
