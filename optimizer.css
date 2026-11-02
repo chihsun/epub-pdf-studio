@@ -78,3 +78,5 @@
   .pdf-download-actions button{width:100%}
 }
 @media(prefers-reduced-motion:reduce){#pdf-progress-fill{animation:none;transform:none;width:38%}}
+
+@media(max-width:760px){.mobile-tool-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:4px}.mobile-tool-switch button{min-height:44px;padding:10px 6px;font-size:12px;white-space:normal;line-height:1.5}}
