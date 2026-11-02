@@ -509,6 +509,7 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
       const targets=activeBookmarkTargets.get(bookmark.fragment)||[];targets.push(bookmark);activeBookmarkTargets.set(bookmark.fragment,targets);
     }
     if(item.media.startsWith('image/')){
+      layout.fullPageImageMode=info.fixedLayout;
       if(options.includeImages){
        try{if(await layout.drawImage(layout.hasImageSource(item.path)?null:await info.zip.file(item.path).async('uint8array'),item.media,item.path))imageCount++;}
         catch(e){warnings.push(`圖片頁面無法處理：${item.path}：${e.message}`);}
@@ -522,10 +523,15 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
           const title=cleanLabel(heading?.textContent);
           if(title)bookmarks.push({title,pageIndex:chapterPage,children:[]});
         }
+        const bodyCopy=dom.body.cloneNode(true);
+        for(const node of bodyCopy.querySelectorAll('script,style,nav'))node.remove();
+        const images=Array.from(dom.body.querySelectorAll('img,svg'));
+        layout.fullPageImageMode=Boolean(info.fixedLayout&&!bodyCopy.textContent.trim()&&images.length===1&&(images[0].localName==='img'||simpleInlineSvgImage(images[0])));
         await drawNode(dom.body,item.path);
         sections++;
       }catch(e){warnings.push(`章節無法處理 ${item.path}：${e.message}`);}
     }
+    layout.fullPageImageMode=false;
     await new Promise(resolve=>setTimeout(resolve,0));
   }
   onProgress(.96,'正在建立 PDF 檔案');

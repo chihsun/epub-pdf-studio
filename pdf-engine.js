@@ -284,8 +284,8 @@ export class PdfLayout {
   measure(text,size){this.ctx.font=`${size}px EPUBStudioMing`;return this.ctx.measureText(text).width;}
   ensure(required=20) { if(this.cursor-required < this.margin+(this.opts.pageNumbers?12:0)) this.nextPage(); }
   nextPage() {
-    if(this.pageItems || this.pages.length===0) this.pages.push({ops:this.ops,images:new Set(this.usedImages)});
-    this.ops=[];this.usedImages=new Set();this.cursor=this.height-this.margin;this.pageItems=0;
+    if(this.pageItems || this.pages.length===0) this.pages.push({ops:this.ops,images:new Set(this.usedImages),imagePage:Boolean(this.pageIsImage)});
+    this.ops=[];this.usedImages=new Set();this.cursor=this.height-this.margin;this.pageItems=0;this.pageIsImage=false;
   }
   beginChapter() { if(this.opts.chapterBreak && (this.pageItems || this.pages.length)) this.nextPage(); }
   drawLine(runs,x,baseline,size,weight='normal') {
@@ -424,7 +424,7 @@ export class PdfLayout {
         }else{
           const maxWidth=Math.max(1,this.width-2*this.margin);
           const maxHeight=Math.max(1,this.height-2*this.margin-18);
-          const displayScale=cover?Math.max(this.width/crop.width,this.height/crop.height):Math.min(maxWidth/width,maxHeight/height,1.6);
+          const displayScale=cover?Math.max(this.width/crop.width,this.height/crop.height):this.fullPageImageMode?Math.min(this.width/width,this.height/height):Math.min(maxWidth/width,maxHeight/height,1.6);
           const actualDpi=displayScale>0?72/displayScale:0;
           const downsample=originalQuality||!quality.targetDpi||!quality.thresholdDpi||actualDpi<=quality.thresholdDpi
             ?1:Math.max(0.01,Math.min(1,displayScale*quality.targetDpi/72));
@@ -460,6 +460,15 @@ export class PdfLayout {
       this.pageItems++;
       return true;
     }
+    if(this.fullPageImageMode){
+      if(this.pageItems)this.nextPage();
+      const scale=Math.min(this.width/w,this.height/h);
+      const pw=w*scale,ph=h*scale;
+      this.usedImages.add(key);
+      this.ops.push(`q ${fmt(pw)} 0 0 ${fmt(ph)} ${fmt((this.width-pw)/2)} ${fmt((this.height-ph)/2)} cm /${key} Do Q`);
+      this.pageItems++;this.pageIsImage=true;
+      return true;
+    }
     const maxWidth=Math.max(1,this.width-2*this.margin);
     const maxHeight=Math.max(1,this.height-2*this.margin-18);
     const scale=Math.min(maxWidth/w,maxHeight/h,1.6);
@@ -473,13 +482,13 @@ export class PdfLayout {
   }
   divider(){this.ensure(16);this.ops.push(`0.75 G 0.5 w ${fmt(this.margin)} ${fmt(this.cursor-5)} m ${fmt(this.width-this.margin)} ${fmt(this.cursor-5)} l S 0 G`);this.cursor-=15;this.pageItems++;}
   finish() {
-    if(this.pageItems || this.pages.length===0) this.pages.push({ops:this.ops,images:new Set(this.usedImages)});
+    if(this.pageItems || this.pages.length===0) this.pages.push({ops:this.ops,images:new Set(this.usedImages),imagePage:Boolean(this.pageIsImage)});
     const pagesId=this.writer.reserve();
     const pageIds=[];
     for(let i=0;i<this.pages.length;i++) {
       const item=this.pages[i];
       const ops=[...item.ops];
-      if(this.opts.pageNumbers) {
+      if(this.opts.pageNumbers&&!item.imagePage) {
         const n=`${i+1} / ${this.pages.length}`;
         const size=9;
         const x=this.width/2-this.measure(n,size)/2;
