@@ -1,3 +1,4 @@
+import './pdf-security.js';
 import {inspectEpub,convertEpub} from './epub-reader.js';
 import {inspectFixedLayoutEpub,optimizeFixedLayoutEpub} from './epub-image-optimizer.js';
 import {loadPdfFont} from './pdf-engine.js';
@@ -110,15 +111,16 @@ function saveQualityFromControls(event){
   renderQualitySettings();clearOutput();clearPdfOutput();
 }
 function setWorkspace(workspace,{scroll=false,updateHash=true}={}){
-  const current=['pdf','epub-opt'].includes(workspace)?workspace:'epub';
+  const current=['pdf','epub-opt','security'].includes(workspace)?workspace:'epub';
+  $('pdf-security').hidden=current!=='security';
   $('epub-workspace').hidden=current!=='epub';
   $('pdf-optimizer').hidden=current!=='pdf';
   $('epub-image-optimizer').hidden=current!=='epub-opt';
-  const labels={epub:'EPUB 轉 PDF',pdf:'PDF 最佳化','epub-opt':'EPUB 圖片最佳化'};
+  const labels={security:'PDF 加密&浮水印',epub:'EPUB 轉 PDF',pdf:'PDF 最佳化','epub-opt':'EPUB 圖片最佳化'};
   $('workspace-crumb').textContent=labels[current];
   document.querySelectorAll('[data-workspace]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.workspace===current)));
   document.querySelectorAll('[data-workspace-link]').forEach(link=>link.classList.toggle('nav-current',link.dataset.workspaceLink===current));
-  if(updateHash)history.replaceState(null,'',current==='pdf'?'#pdf-optimizer':current==='epub-opt'?'#epub-image-optimizer':'#epub-workspace');
+  if(updateHash)history.replaceState(null,'',current==='security'?'#pdf-security':current==='pdf'?'#pdf-optimizer':current==='epub-opt'?'#epub-image-optimizer':'#epub-workspace');
   if(scroll)window.scrollTo({top:0,behavior:'smooth'});
 }
 function bindWorkspaceNavigation(){
@@ -402,3 +404,5 @@ updateImageOptimizerButton();
 if(location.hash==='#pdf-optimizer')setWorkspace('pdf',{updateHash:false});
 if(location.hash==='#epub-image-optimizer')setWorkspace('epub-opt',{updateHash:false});
 updateRangeLabels();registerPWA();
+
+if(location.hash==='#pdf-security')setWorkspace('security',{updateHash:false});
