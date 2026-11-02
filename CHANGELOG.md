@@ -64,3 +64,7 @@
 - 增補 qpdf WASM、zlib、libjpeg-turbo、Emscripten 授權與來源資訊，更新 Service Worker 離線資產及使用說明。
 - 採用 Uiverse iOS toggle 的微互動概念，沿用既有主題色並支援減少動態效果；新版 Service Worker 不自動清除其他版本快取。
 - 未整合 Ghostscript WASM；其 AGPL/商業授權條件尚未確認與本專案的 MIT 授權相容。
+
+## v1.6.1 — 2026-11-02
+
+- 統一 PDF 保護工作區樣式，新增全部、隨機及指定頁面，JSON 自動帶入頁碼。

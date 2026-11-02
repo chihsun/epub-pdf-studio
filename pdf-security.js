@@ -1,6 +1,9 @@
 import {PdfWriter} from './pdf-engine.js';
 const $=id=>document.getElementById(id);
 let activeWorker=null,downloadUrl=null;
+const syncPageFields=()=>{ $('secure-page-list').parentElement.hidden=$('secure-page-mode').value!=='specified';$('secure-random-count').parentElement.hidden=$('secure-page-mode').value!=='random';};
+$('secure-page-mode').addEventListener('change',syncPageFields);
+syncPageFields();
 const status=text=>{$('secure-status').textContent=text;};
 $('secure-json').addEventListener('change',async event=>{
  try{
@@ -10,6 +13,8 @@ $('secure-json').addEventListener('change',async event=>{
   const pages=data.images.map(item=>({page:Number(item.savedIndex),text:String(item.text??''),applied:item.applied===true,sourceWidth:item.sourceWidth??item.width??null,sourceHeight:item.sourceHeight??item.height??null}));
   if(pages.some(item=>!Number.isInteger(item.page)||item.page<1))throw Error('JSON 含無效的 savedIndex');
   $('secure-pages').value=JSON.stringify(pages,null,2);
+  $('secure-page-mode').value='specified';
+  $('secure-page-list').value=pages.filter(x=>x.applied).map(x=>x.page).join(',');syncPageFields();
   if(data.renderer?.fontFamily)$('secure-font').value=String(data.renderer.fontFamily);
   if(Number.isFinite(data.renderer?.globalAlpha))$('secure-alpha').value=data.renderer.globalAlpha;
   if(/^#[0-9a-f]{6}$/i.test(data.renderer?.fillStyle||''))$('secure-color').value=data.renderer.fillStyle;
@@ -23,10 +28,11 @@ async function compress(bytes){
 }
 async function makeOverlay(boxes,records,options){
  const writer=new PdfWriter(),pages=writer.reserve(),ids=[];
+ const selected=new Set(options.pageMode==='all'?boxes.map((_,i)=>i+1):options.pageMode==='random'?Array.from({length:boxes.length},(_,i)=>({page:i+1,key:Math.random()})).sort((a,b)=>a.key-b.key).slice(0,Math.min(boxes.length,options.randomCount)).map(x=>x.page):options.pageList.filter(n=>n<=boxes.length));
  for(let i=0;i<boxes.length;i++){
   const box=boxes[i],w=box[2]-box[0],h=box[3]-box[1];
   const record=records.find(x=>x.page===i+1);
-  const text=options.text||(record?.applied?String(record.text||''):'');
+  const text=selected.has(i+1)?(options.text||String(record?.text||'')):'';
   let resources='<< >>',content='';
   if(text){
    const scale=Math.min(2,2048/Math.max(w,h));
@@ -59,7 +65,7 @@ $('secure-run').addEventListener('click',async()=>{
   const ownerPassword=$('secure-owner-password').value,openPassword=$('secure-open-password').value;
   if(encrypt&&(!ownerPassword||ownerPassword===openPassword))throw Error('請設定與開啟密碼不同的管理密碼');
   const opts={inputPassword:$('secure-input-password').value,encrypt,ownerPassword,openPassword,print:$('secure-print').value,modify:$('secure-modify').value,extract:$('secure-extract').checked,annotate:$('secure-annotate').checked};
-  const overlayOpts={text:$('secure-text').value,font:$('secure-font').value||'Verdana',size:Number($('secure-size').value),alpha:Number($('secure-alpha').value),color:$('secure-color').value,position:$('secure-position').value};
+  const overlayOpts={text:$('secure-text').value,font:$('secure-font').value||'Verdana',size:Number($('secure-size').value),alpha:Number($('secure-alpha').value),color:$('secure-color').value,position:$('secure-position').value,pageMode:$('secure-page-mode').value,pageList:$('secure-page-list').value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>0),randomCount:Number($('secure-random-count').value)};
   if(!Number.isFinite(overlayOpts.size)||overlayOpts.size<0.01||overlayOpts.size>0.3||!Number.isFinite(overlayOpts.alpha)||overlayOpts.alpha<0||overlayOpts.alpha>1)throw Error('請確認字級比例與透明度範圍');
   const records=$('secure-pages').value.trim()?JSON.parse($('secure-pages').value):[];
   if(!Array.isArray(records)||records.some(x=>!Number.isInteger(x.page)||x.page<1))throw Error('逐頁資料必須是包含有效 page 的陣列');
@@ -70,7 +76,7 @@ $('secure-run').addEventListener('click',async()=>{
    const message=event.data;
    try{
     if(message.type==='pages'){
-     if(records.some(x=>x.page>message.boxes.length))throw Error('逐頁資料超出 PDF 頁數');
+     if(!Number.isInteger(overlayOpts.randomCount)||overlayOpts.randomCount<1)throw Error('隨機頁數需為正整數');
      status('正在產生浮水印與保護設定…');
      const buffer=watermark?await makeOverlay(message.boxes,records,overlayOpts):null;
      worker.postMessage({type:'overlay',buffer},buffer?[buffer]:[]);
