@@ -1,6 +1,26 @@
 import {PdfWriter} from './pdf-engine.js';
 const $=id=>document.getElementById(id);
-let activeWorker=null,downloadUrl=null,importedPageText=false;
+let activeWorker=null,downloadUrl=null,importedPageText=false,selectedPdf=null;
+const choosePdf=()=>{if(!activeWorker)$('secure-file').click();};
+const acceptPdf=file=>{
+ if(!file||activeWorker)return;
+ if(!/\.pdf$/i.test(file.name)){status('請選擇 PDF 檔案');return;}
+ selectedPdf=file;
+ $('secure-file-name').textContent=file.name;
+ $('secure-file-size').textContent=(file.size/1024/1024).toFixed(2)+' MB · 本機檔案';
+ $('secure-file-details').hidden=false;
+ $('secure-download').hidden=true;
+ if(downloadUrl){URL.revokeObjectURL(downloadUrl);downloadUrl=null;}
+ status('');
+};
+$('secure-file').addEventListener('change',event=>acceptPdf(event.target.files?.[0]));
+for(const id of ['secure-choose-button','secure-replace-button'])$(id).addEventListener('click',event=>{event.stopPropagation();choosePdf();});
+const dropzone=$('secure-dropzone');
+dropzone.addEventListener('click',event=>{if(event.target!==$('secure-file'))choosePdf();});
+dropzone.addEventListener('keydown',event=>{if(event.target===dropzone&&(event.key==='Enter'||event.key===' ')){event.preventDefault();choosePdf();}});
+for(const type of ['dragenter','dragover'])dropzone.addEventListener(type,event=>{event.preventDefault();if(!activeWorker)dropzone.classList.add('dragover');});
+for(const type of ['dragleave','drop'])dropzone.addEventListener(type,event=>{event.preventDefault();dropzone.classList.remove('dragover');});
+dropzone.addEventListener('drop',event=>acceptPdf(event.dataTransfer?.files?.[0]));
 $('secure-text').addEventListener('input',()=>{importedPageText=false;});
 const syncPageFields=()=>{ $('secure-page-list').parentElement.hidden=$('secure-page-mode').value!=='specified';$('secure-random-count').parentElement.hidden=$('secure-page-mode').value!=='random';};
 $('secure-page-mode').addEventListener('change',syncPageFields);
@@ -64,7 +84,7 @@ async function makeOverlay(boxes,records,options){
 $('secure-cancel').addEventListener('click',()=>{activeWorker?.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;status('已取消。');});
 $('secure-run').addEventListener('click',async()=>{
  try{
-  const file=$('secure-file').files[0];if(!file)throw Error('請選擇 PDF 檔案');
+  const file=selectedPdf;if(!file)throw Error('請選擇 PDF 檔案');
   const encrypt=$('secure-encrypt').checked,watermark=$('secure-watermark').checked;
   if(!encrypt&&!watermark)throw Error('請選擇加密或浮水印');
   const ownerPassword=$('secure-owner-password').value,openPassword=$('secure-open-password').value;
