@@ -574,7 +574,13 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
   onProgress(.96,'正在建立 PDF 檔案');
   const {pagesId,pageIds,pageCount}=layout.finish();
   if(layout.pageItems===0 && layout.pages.length===1 && sections===0 && imageCount===0)throw new Error('此 EPUB 沒有可輸出的文字或圖片');
-  const resolvedBookmarks=resolvedBookmarkTree(bookmarks,pageCount);
+  // Unnamed page entries add no navigation value; keep their named descendants.
+  const namedBookmarks=nodes=>nodes.flatMap(node=>{
+    const children=namedBookmarks(node.children||[]);
+    return /^(?:第\s*\d+\s*頁|page\s*\d+)$/i.test(cleanLabel(node.title))
+      ?children:[{...node,children}];
+  });
+  const resolvedBookmarks=resolvedBookmarkTree(namedBookmarks(bookmarks),pageCount);
   const bookmarkCount=countBookmarks(resolvedBookmarks);
   const manualDirection=options.readingDirection==='rtl'?'R2L':options.readingDirection==='ltr'?'L2R':null;
   const readingDirection=manualDirection||info.readingDirection||null;
