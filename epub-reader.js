@@ -518,6 +518,13 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
       try{
         const raw=await info.zip.file(item.path).async('string');
         const dom=parseMarkup(raw,'text/html');
+        // Hidden headings remain useful metadata even when omitted from page content.
+        const chapterHeading=cleanLabel(dom.body.querySelector('h1,h2,h3,h4,h5,h6')?.textContent);
+        if(chapterHeading){
+          for(const bookmark of navigationEntries){
+            if(bookmark.path===item.path&&!bookmark.fragment&&/^(?:第\s*\d+\s*頁|page\s*\d+)$/i.test(cleanLabel(bookmark.title)))bookmark.title=chapterHeading;
+          }
+        }
         if(!(info.navigation||[]).length){
           const heading=dom.body.querySelector('h1,h2,h3,h4,h5,h6');
           const title=cleanLabel(heading?.textContent);
