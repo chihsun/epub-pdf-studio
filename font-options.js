@@ -143,3 +143,21 @@ export function bindFontOptions(){
     }
   };
 }
+
+// Share the EPUB font decoders without changing the EPUB font selection.
+const localFontCache=new WeakMap();
+export async function inspectLocalFontFile(file){
+  if(!file)throw new Error('請選擇字型檔');
+  if(!localFontCache.has(file))localFontCache.set(file,normalizeFont(new Uint8Array(await file.arrayBuffer())));
+  return fontFaceNames(await localFontCache.get(file));
+}
+export async function loadLocalWatermarkFont(file,index=0){
+  await inspectLocalFontFile(file);
+  const bytes=extractFontFace(await localFontCache.get(file),index);
+  validateTrueTypeOutline(bytes);
+  const face=new FontFace('EPUBStudioWatermark',bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+  await face.load();
+  for(const existing of document.fonts)if(existing.family==='EPUBStudioWatermark')document.fonts.delete(existing);
+  document.fonts.add(face);
+  return face.family;
+}

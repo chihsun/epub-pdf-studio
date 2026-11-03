@@ -11,3 +11,5 @@
 #pdf-security .panel>label.security-main-toggle{display:flex;align-items:center;gap:14px;padding:18px;border:1px solid var(--ui-border);border-left:4px solid var(--ui-accent);border-radius:12px;background:var(--ui-surface-soft);cursor:pointer;margin:22px 0}#pdf-security .security-main-toggle input[type=checkbox]{width:22px;height:22px;flex:0 0 22px;accent-color:var(--ui-accent)}#pdf-security .security-main-toggle strong{display:block;font-size:17px;font-weight:800;line-height:1.5;color:var(--ui-text)}#pdf-security .security-main-toggle small{display:block;font-size:12px;font-weight:400;color:var(--ui-subtle);margin-top:5px;line-height:1.6}#pdf-security .security-main-toggle:has(input:checked){border-color:var(--ui-accent);background:var(--ui-accent-soft)}
 
 #secure-file[hidden]{display:none!important}#secure-file-details{margin-top:20px}
+
+#secure-font-file-fields[hidden]{display:none!important}#secure-font-file-fields{padding:12px;border:1px solid var(--ui-border);border-radius:10px}#secure-font-note{font-size-adjust:from-font}

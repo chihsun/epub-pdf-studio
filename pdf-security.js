@@ -1,3 +1,4 @@
+import {inspectLocalFontFile,loadLocalWatermarkFont} from './font-options.js';
 import {PdfWriter} from './pdf-engine.js';
 const $=id=>document.getElementById(id);
 let activeWorker=null,downloadUrl=null,importedPageText=false,selectedPdf=null;
@@ -22,7 +23,15 @@ for(const type of ['dragenter','dragover'])dropzone.addEventListener(type,event=
 for(const type of ['dragleave','drop'])dropzone.addEventListener(type,event=>{event.preventDefault();dropzone.classList.remove('dragover');});
 dropzone.addEventListener('drop',event=>acceptPdf(event.dataTransfer?.files?.[0]));
 $('secure-text').addEventListener('input',()=>{importedPageText=false;});
-const syncPageFields=()=>{ $('secure-page-list').parentElement.hidden=$('secure-page-mode').value!=='specified';$('secure-random-count').parentElement.hidden=$('secure-page-mode').value!=='random';};
+const syncPageFields=()=>{ $('secure-page-list').parentElement.hidden=$('secure-page-mode').value!=='specified';$('secure-random-count').parentElement.hidden=$('secure-page-mode').value!=='random';$('secure-interval').parentElement.hidden=$('secure-page-mode').value!=='interval';};
+const syncFontFields=()=>{$('secure-font-file-fields').hidden=$('secure-font-mode').value!=='file';};
+$('secure-font-mode').addEventListener('change',syncFontFields);
+syncFontFields();
+$('secure-font-file').addEventListener('change',async event=>{
+ const select=$('secure-font-face');select.replaceChildren();
+ try{const names=await inspectLocalFontFile(event.target.files?.[0]);names.forEach((name,index)=>select.add(new Option(name,index)));$('secure-font-note').textContent='字型已讀取；產生浮水印前會完成載入。';}
+ catch(error){$('secure-font-note').textContent=error.message;}
+});
 $('secure-page-mode').addEventListener('change',syncPageFields);
 syncPageFields();
 const status=text=>{$('secure-status').textContent=text;};
@@ -52,21 +61,26 @@ async function compress(bytes){
  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 async function makeOverlay(boxes,records,options){
- const writer=new PdfWriter(),pages=writer.reserve(),ids=[];
- const selected=new Set(options.pageMode==='all'?boxes.map((_,i)=>i+1):options.pageMode==='random'?Array.from({length:boxes.length},(_,i)=>({page:i+1,key:Math.random()})).sort((a,b)=>a.key-b.key).slice(0,Math.min(boxes.length,options.randomCount)).map(x=>x.page):options.pageList.filter(n=>n<=boxes.length));
+ const writer=new PdfWriter(),pages=writer.reserve(),ids=[];options.appliedPages=[];
+ let intervalPages=[];
+ if(options.pageMode==='interval'){
+  for(let start=1;start<=boxes.length;){const length=options.intervalMin+Math.floor(Math.random()*(options.intervalMax-options.intervalMin+1));const end=Math.min(boxes.length,start+length-1);intervalPages.push(start+Math.floor(Math.random()*(end-start+1)));start=end+1;}
+ }
+ const selected=new Set(options.pageMode==='interval'?intervalPages:options.pageMode==='all'?boxes.map((_,i)=>i+1):options.pageMode==='random'?Array.from({length:boxes.length},(_,i)=>({page:i+1,key:Math.random()})).sort((a,b)=>a.key-b.key).slice(0,Math.min(boxes.length,options.randomCount)).map(x=>x.page):options.pageList.filter(n=>n<=boxes.length));
  for(let i=0;i<boxes.length;i++){
   const box=boxes[i],w=box[2]-box[0],h=box[3]-box[1];
   const record=records.find(x=>x.page===i+1);
   const text=selected.has(i+1)?(options.text||String(record?.text||'')):'';
   let resources='<< >>',content='';
   if(text){
+   options.appliedPages.push(i+1);
    const scale=Math.min(2,2048/Math.max(w,h));
    const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.ceil(w*scale));canvas.height=Math.max(1,Math.ceil(h*scale));
    const ctx=canvas.getContext('2d');const size=options.size*Math.min(canvas.width,canvas.height);
    ctx.font=`${size}px ${JSON.stringify(options.font)}`;ctx.fillStyle=options.color;ctx.globalAlpha=options.alpha;ctx.textBaseline='alphabetic';
    const tw=ctx.measureText(text).width, pos=options.position==='random'?Math.floor(Math.random()*5):Number(options.position);
    const coords=[[canvas.width-tw-8*scale,canvas.height-18*scale],[10*scale,canvas.height-18*scale],[canvas.width-tw-8*scale,2*size],[10*scale,2*size],[(canvas.width-tw)/2,canvas.height/2]][pos];
-   ctx.fillText(text,coords[0],coords[1]);
+   ctx.fillText(text,Math.max(0,coords[0]),Math.min(canvas.height,Math.max(size,coords[1])),canvas.width-16*scale);
    const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data,rgb=new Uint8Array(canvas.width*canvas.height*3),alpha=new Uint8Array(canvas.width*canvas.height);
    for(let j=0,k=0;j<alpha.length;j++){rgb[k++]=rgba[j*4];rgb[k++]=rgba[j*4+1];rgb[k++]=rgba[j*4+2];alpha[j]=rgba[j*4+3];}
    const mask=writer.stream(await compress(alpha),`/Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode`);
@@ -92,6 +106,10 @@ $('secure-run').addEventListener('click',async()=>{
   const opts={inputPassword:$('secure-input-password').value,encrypt,ownerPassword,openPassword,print:$('secure-print').value,modify:$('secure-modify').value,extract:$('secure-extract').checked,annotate:$('secure-annotate').checked};
   const overlayOpts={text:importedPageText?'':$('secure-text').value,font:$('secure-font').value||'Verdana',size:Number($('secure-size').value),alpha:Number($('secure-alpha').value),color:$('secure-color').value,position:$('secure-position').value,pageMode:$('secure-page-mode').value,pageList:$('secure-page-list').value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>0),randomCount:Number($('secure-random-count').value)};
   if(!Number.isFinite(overlayOpts.size)||overlayOpts.size<0.01||overlayOpts.size>0.3||!Number.isFinite(overlayOpts.alpha)||overlayOpts.alpha<0||overlayOpts.alpha>1)throw Error('請確認字級比例與透明度範圍');
+  const interval=$('secure-interval').value.trim().match(/^(\d+)\s*-\s*(\d+)$/);
+  if(overlayOpts.pageMode==='interval'){if(!interval||Number(interval[1])<1||Number(interval[2])<Number(interval[1])||Number(interval[2])>100000)throw Error('請輸入有效間隔範圍，例如 5-10');overlayOpts.intervalMin=Number(interval[1]);overlayOpts.intervalMax=Number(interval[2]);}
+  if(watermark&&$('secure-font-mode').value==='file')overlayOpts.font=await loadLocalWatermarkFont($('secure-font-file').files[0],Number($('secure-font-face').value)||0);
+  else if(watermark)await document.fonts.load('16px '+JSON.stringify(overlayOpts.font));
   const records=$('secure-pages').value.trim()?JSON.parse($('secure-pages').value):[];
   if(!Array.isArray(records)||records.some(x=>!Number.isInteger(x.page)||x.page<1))throw Error('逐頁資料必須是包含有效 page 的陣列');
   if(watermark&&!overlayOpts.text&&!records.some(x=>x.applied&&x.text))throw Error('請輸入浮水印文字或匯入逐頁編號');
@@ -100,16 +118,18 @@ $('secure-run').addEventListener('click',async()=>{
   worker.onmessage=async event=>{
    const message=event.data;
    try{
+    if(message.type==='progress'){status(message.message);return;}
     if(message.type==='pages'){
      if(!Number.isInteger(overlayOpts.randomCount)||overlayOpts.randomCount<1)throw Error('隨機頁數需為正整數');
      status('正在產生浮水印與保護設定…');
      const buffer=watermark?await makeOverlay(message.boxes,records,overlayOpts):null;
+     if(watermark&&!overlayOpts.appliedPages.length)throw Error('沒有可套用的浮水印頁面，請確認頁碼與文字。');
      worker.postMessage({type:'overlay',buffer},buffer?[buffer]:[]);
     }else if(message.type==='result'){
      if(downloadUrl)URL.revokeObjectURL(downloadUrl);
      downloadUrl=URL.createObjectURL(new Blob([message.buffer],{type:'application/pdf'}));
      $('secure-download').href=downloadUrl;$('secure-download').download=file.name.replace(/\.pdf$/i,'')+'-protected.pdf';$('secure-download').hidden=false;
-     status('處理完成，請下載並檢查輸出。');worker.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;
+     status(watermark?'已加上 '+overlayOpts.appliedPages.length+' 頁浮水印：'+overlayOpts.appliedPages.join(', ')+'。請下載新檔檢查。':'處理完成，請下載並檢查輸出。');worker.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;
     }else if(message.type==='error')throw Error(message.message);
    }catch(error){worker.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;status(error.message);}
   };

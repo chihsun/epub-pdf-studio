@@ -4,13 +4,16 @@ self.addEventListener('message',event=>{
  const m=event.data;
  if(m.type!=='secure')return;
  (async()=>{
+ self.postMessage({type:'progress',message:'正在載入 PDF 引擎…'});
  await initQpdf();
  const paths=['/secure-in.pdf','/secure.json','/secure-overlay.pdf','/secure-out.pdf'];
  try{
  qpdf.FS.writeFile(paths[0],new Uint8Array(m.buffer));
  const auth=m.options.inputPassword?['--password='+m.options.inputPassword]:[];
  const run=args=>{const r=runQpdf(args);if(r.exitCode!==0)throw Error('PDF 處理未通過：'+(r.stderr||r.stdout));};
+ self.postMessage({type:'progress',message:'正在檢查 PDF 結構…'});
  run([...auth,'--check',paths[0]]);
+ self.postMessage({type:'progress',message:'正在讀取頁面尺寸…'});
  run([...auth,'--json',paths[0],paths[1]]);
  const raw=qpdf.FS.readFile(paths[1],{encoding:'utf8'});
  if(/"\/ByteRange"\s*:/.test(raw))throw Error('已簽章 PDF 無法重新寫入，以免簽章失效。');
@@ -36,6 +39,7 @@ self.addEventListener('message',event=>{
  if(o.encrypt){
  args.push('--encrypt',o.openPassword||'',o.ownerPassword,'256','--print='+o.print,'--modify='+o.modify,'--extract='+(o.extract?'y':'n'),'--annotate='+(o.annotate?'y':'n'),'--');
  }
+ self.postMessage({type:'progress',message:'正在合併浮水印並檢查輸出…'});
  args.push(paths[3]);run(args);
  const checkAuth=o.encrypt?['--password='+o.ownerPassword]:auth;
  run([...checkAuth,'--check',paths[3]]);
