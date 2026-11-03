@@ -523,6 +523,36 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
           const title=cleanLabel(heading?.textContent);
           if(title)bookmarks.push({title,pageIndex:chapterPage,children:[]});
         }
+        // Fixed-layout exports may include navigation headings hidden by CSS.
+        // Resolve simple type-selector display rules without flattening conditional CSS.
+        if(info.fixedLayout){
+          const rules=[];
+          for(const node of dom.querySelectorAll('link[rel],style')){
+            let css='';
+            if(node.localName==='style')css=node.textContent||'';
+            else if((node.getAttribute('rel')||'').split(/\s+/).includes('stylesheet')){
+              try{css=await info.zip.file(resolvePath(item.path,node.getAttribute('href')||''))?.async('string')||'';}catch{}
+            }
+            if(!/@(?:media|supports|container|layer|import)\b/i.test(css))rules.push(...parseCssRules(css));
+          }
+          for(const element of dom.body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,[hidden]')){
+            let display='',important=false,ambiguous=false;
+            for(const rule of rules){
+              const matches=rule.selectors.filter(selector=>{try{return element.matches(selector);}catch{return false;}});
+              for(const match of rule.declarations.matchAll(/(?:^|;)\s*display\s*:\s*([\w-]+)\s*(!important)?\s*(?=;|$)/gi)){
+                if(!matches.length)continue;
+                if(matches.some(selector=>!/^[a-z][a-z0-9]*$/i.test(selector))){ambiguous=true;continue;}
+                if(!important||match[2]){display=match[1].toLowerCase();important=Boolean(match[2]);}
+              }
+            }
+            for(const match of (element.getAttribute('style')||'').matchAll(/(?:^|;)\s*display\s*:\s*([\w-]+)\s*(!important)?\s*(?=;|$)/gi)){
+              if(!important||match[2]){display=match[1].toLowerCase();important=Boolean(match[2]);}
+            }
+            if(element.hasAttribute('hidden')||(!ambiguous&&display==='none')){
+              markBookmarkTarget(element);element.remove();
+            }
+          }
+        }
         const bodyCopy=dom.body.cloneNode(true);
         for(const node of bodyCopy.querySelectorAll('script,style,nav'))node.remove();
         const images=Array.from(dom.body.querySelectorAll('img,svg'));
