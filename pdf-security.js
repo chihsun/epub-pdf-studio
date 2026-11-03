@@ -23,6 +23,24 @@ for(const type of ['dragenter','dragover'])dropzone.addEventListener(type,event=
 for(const type of ['dragleave','drop'])dropzone.addEventListener(type,event=>{event.preventDefault();dropzone.classList.remove('dragover');});
 dropzone.addEventListener('drop',event=>acceptPdf(event.dataTransfer?.files?.[0]));
 $('secure-text').addEventListener('input',()=>{importedPageText=false;});
+function randomWatermarkNumber(){
+ const range=90000000,limit=Math.floor(4294967296/range)*range,value=new Uint32Array(1);
+ do{crypto.getRandomValues(value);}while(value[0]>=limit);
+ return String(10000000+value[0]%range);
+}
+function generateWatermarkNumber(){
+ $('secure-text').value=randomWatermarkNumber();importedPageText=false;
+ $('secure-text-info').textContent='隨機產生 8 位數字；本次 PDF 的所選頁面共用此編號，每次執行會重新產生。';
+}
+function syncRandomText(){
+ const enabled=$('secure-random-text').checked;
+ $('secure-text').readOnly=enabled;$('secure-regenerate-text').hidden=!enabled;
+ if(enabled)generateWatermarkNumber();
+ else $('secure-text-info').textContent='可輸入共用文字，或留空使用 JSON 逐頁編號。';
+}
+$('secure-random-text').addEventListener('change',syncRandomText);
+$('secure-regenerate-text').addEventListener('click',generateWatermarkNumber);
+
 const syncPageFields=()=>{ $('secure-page-list').parentElement.hidden=$('secure-page-mode').value!=='specified';$('secure-random-count').parentElement.hidden=$('secure-page-mode').value!=='random';$('secure-interval').parentElement.hidden=$('secure-page-mode').value!=='interval';};
 const fontMode=()=>document.querySelector('input[name="secure-font-mode"]:checked').value;
 const syncFontFields=()=>{const fileMode=fontMode()==='file';$('secure-font').disabled=fileMode;$('secure-font-file').disabled=!fileMode;$('secure-font-face').disabled=!fileMode;};
@@ -44,6 +62,7 @@ $('secure-json').addEventListener('change',async event=>{
   const pages=data.images.map(item=>({page:Number(item.savedIndex),text:String(item.text??''),applied:item.applied===true,sourceWidth:item.sourceWidth??item.width??null,sourceHeight:item.sourceHeight??item.height??null}));
   if(pages.some(item=>!Number.isInteger(item.page)||item.page<1))throw Error('JSON 含無效的 savedIndex');
   $('secure-pages').value=JSON.stringify(pages,null,2);
+  $('secure-random-text').checked=false;syncRandomText();
   const texts=[...new Set(pages.filter(x=>x.applied&&x.text).map(x=>x.text))];
   $('secure-text').value=texts[0]||'';
   importedPageText=texts.length>1;
@@ -105,6 +124,7 @@ $('secure-run').addEventListener('click',async()=>{
   const ownerPassword=$('secure-owner-password').value,openPassword=$('secure-open-password').value;
   if(encrypt&&(!ownerPassword||ownerPassword===openPassword))throw Error('請設定與開啟密碼不同的管理密碼');
   const opts={inputPassword:$('secure-input-password').value,encrypt,ownerPassword,openPassword,print:$('secure-print').value,modify:$('secure-modify').value,extract:$('secure-extract').checked,annotate:$('secure-annotate').checked};
+  if(watermark&&$('secure-random-text').checked)generateWatermarkNumber();
   const overlayOpts={text:importedPageText?'':$('secure-text').value,font:$('secure-font').value.trim()||'sans-serif',size:Number($('secure-size').value),alpha:Number($('secure-alpha').value),color:$('secure-color').value,position:$('secure-position').value,pageMode:$('secure-page-mode').value,pageList:$('secure-page-list').value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>0),randomCount:Number($('secure-random-count').value)};
   if(!Number.isFinite(overlayOpts.size)||overlayOpts.size<0.01||overlayOpts.size>0.3||!Number.isFinite(overlayOpts.alpha)||overlayOpts.alpha<0||overlayOpts.alpha>1)throw Error('請確認字級比例與透明度範圍');
   const interval=$('secure-interval').value.trim().match(/^(\d+)\s*-\s*(\d+)$/);

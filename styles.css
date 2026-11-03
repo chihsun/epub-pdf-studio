@@ -18,3 +18,14 @@
 
 /* Explicit typography prevents nested labels from inheriting the page default. */
 #pdf-security .secure-font-options{font-size:13px;line-height:1.6}#pdf-security .secure-font-options legend{font-size:14px}#pdf-security .panel .secure-font-choice{display:flex;align-items:center;font-size:14px;line-height:1.6}#pdf-security .secure-font-choice strong{font-size:inherit;font-weight:700}#pdf-security #secure-font-file-fields label{font-size:12px;font-weight:650;line-height:1.6;color:var(--ui-text);margin:12px 0 6px}#pdf-security .secure-font-options input:not([type=radio]),#pdf-security .secure-font-options select{font-size:13px;font-weight:400;line-height:1.5}#pdf-security .secure-font-options input[type=file]::file-selector-button{font-size:12px;font-weight:650}#pdf-security .secure-font-options p{font-size:12px;font-weight:400;line-height:1.7}#pdf-security #secure-font-note{font-size-adjust:none}
+
+/* Shared hierarchy across encryption and watermark settings. */
+#pdf-security .options-panel{font-size:13px;line-height:1.6}
+#pdf-security .options-panel label,#pdf-security .options-panel #secure-font-file-fields label{font-size:13px;font-weight:650;line-height:1.6}
+#pdf-security .options-panel input:not([type=checkbox]):not([type=radio]),#pdf-security .options-panel select,#pdf-security .options-panel textarea{font-size:13px;font-weight:400;line-height:1.5}
+#pdf-security .options-panel fieldset legend,#pdf-security .options-panel .secure-font-choice{font-size:14px;font-weight:700}
+#pdf-security .options-panel .security-main-toggle strong{font-size:17px;font-weight:800}
+#pdf-security .options-panel p,#pdf-security .options-panel small{font-size:12px;font-weight:400;line-height:1.7}
+#pdf-security .options-panel input[type=checkbox],#pdf-security .options-panel input[type=radio]{accent-color:var(--ui-accent)}
+#pdf-security .options-panel .secure-inline-choice{display:flex;gap:10px;align-items:center}
+#secure-regenerate-text[hidden]{display:none!important}
