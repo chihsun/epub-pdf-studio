@@ -24,8 +24,9 @@ for(const type of ['dragleave','drop'])dropzone.addEventListener(type,event=>{ev
 dropzone.addEventListener('drop',event=>acceptPdf(event.dataTransfer?.files?.[0]));
 $('secure-text').addEventListener('input',()=>{importedPageText=false;});
 const syncPageFields=()=>{ $('secure-page-list').parentElement.hidden=$('secure-page-mode').value!=='specified';$('secure-random-count').parentElement.hidden=$('secure-page-mode').value!=='random';$('secure-interval').parentElement.hidden=$('secure-page-mode').value!=='interval';};
-const syncFontFields=()=>{$('secure-font-file-fields').hidden=$('secure-font-mode').value!=='file';};
-$('secure-font-mode').addEventListener('change',syncFontFields);
+const fontMode=()=>document.querySelector('input[name="secure-font-mode"]:checked').value;
+const syncFontFields=()=>{const fileMode=fontMode()==='file';$('secure-font').disabled=fileMode;$('secure-font-file').disabled=!fileMode;$('secure-font-face').disabled=!fileMode;};
+for(const radio of document.querySelectorAll('input[name="secure-font-mode"]'))radio.addEventListener('change',syncFontFields);
 syncFontFields();
 $('secure-font-file').addEventListener('change',async event=>{
  const select=$('secure-font-face');select.replaceChildren();
@@ -49,7 +50,7 @@ $('secure-json').addEventListener('change',async event=>{
   $('secure-text-info').textContent=importedPageText?'顯示第一個匯入編號；各頁仍使用 JSON 的逐頁編號。修改此欄後，會將新文字套用至所有選定頁面。':'已帶入 JSON 浮水印文字／編號，可直接修改。';
   $('secure-page-mode').value='specified';
   $('secure-page-list').value=pages.filter(x=>x.applied).map(x=>x.page).join(',');syncPageFields();
-  if(data.renderer?.fontFamily)$('secure-font').value=String(data.renderer.fontFamily);
+  if(data.renderer?.fontFamily){$('secure-font').value=String(data.renderer.fontFamily);document.querySelector('input[name="secure-font-mode"][value="name"]').checked=true;syncFontFields();}
   if(Number.isFinite(data.renderer?.globalAlpha))$('secure-alpha').value=data.renderer.globalAlpha;
   if(/^#[0-9a-f]{6}$/i.test(data.renderer?.fillStyle||''))$('secure-color').value=data.renderer.fillStyle;
   $('secure-watermark').checked=true;
@@ -77,7 +78,7 @@ async function makeOverlay(boxes,records,options){
    const scale=Math.min(2,2048/Math.max(w,h));
    const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.ceil(w*scale));canvas.height=Math.max(1,Math.ceil(h*scale));
    const ctx=canvas.getContext('2d');const size=options.size*Math.min(canvas.width,canvas.height);
-   ctx.font=`${size}px ${JSON.stringify(options.font)}`;ctx.fillStyle=options.color;ctx.globalAlpha=options.alpha;ctx.textBaseline='alphabetic';
+   ctx.font=`${size}px ${JSON.stringify(options.font)}, sans-serif`;ctx.fillStyle=options.color;ctx.globalAlpha=options.alpha;ctx.textBaseline='alphabetic';
    const tw=ctx.measureText(text).width, pos=options.position==='random'?Math.floor(Math.random()*5):Number(options.position);
    const coords=[[canvas.width-tw-8*scale,canvas.height-18*scale],[10*scale,canvas.height-18*scale],[canvas.width-tw-8*scale,2*size],[10*scale,2*size],[(canvas.width-tw)/2,canvas.height/2]][pos];
    ctx.fillText(text,Math.max(0,coords[0]),Math.min(canvas.height,Math.max(size,coords[1])),canvas.width-16*scale);
@@ -104,11 +105,11 @@ $('secure-run').addEventListener('click',async()=>{
   const ownerPassword=$('secure-owner-password').value,openPassword=$('secure-open-password').value;
   if(encrypt&&(!ownerPassword||ownerPassword===openPassword))throw Error('請設定與開啟密碼不同的管理密碼');
   const opts={inputPassword:$('secure-input-password').value,encrypt,ownerPassword,openPassword,print:$('secure-print').value,modify:$('secure-modify').value,extract:$('secure-extract').checked,annotate:$('secure-annotate').checked};
-  const overlayOpts={text:importedPageText?'':$('secure-text').value,font:$('secure-font').value||'Verdana',size:Number($('secure-size').value),alpha:Number($('secure-alpha').value),color:$('secure-color').value,position:$('secure-position').value,pageMode:$('secure-page-mode').value,pageList:$('secure-page-list').value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>0),randomCount:Number($('secure-random-count').value)};
+  const overlayOpts={text:importedPageText?'':$('secure-text').value,font:$('secure-font').value.trim()||'sans-serif',size:Number($('secure-size').value),alpha:Number($('secure-alpha').value),color:$('secure-color').value,position:$('secure-position').value,pageMode:$('secure-page-mode').value,pageList:$('secure-page-list').value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>0),randomCount:Number($('secure-random-count').value)};
   if(!Number.isFinite(overlayOpts.size)||overlayOpts.size<0.01||overlayOpts.size>0.3||!Number.isFinite(overlayOpts.alpha)||overlayOpts.alpha<0||overlayOpts.alpha>1)throw Error('請確認字級比例與透明度範圍');
   const interval=$('secure-interval').value.trim().match(/^(\d+)\s*-\s*(\d+)$/);
   if(overlayOpts.pageMode==='interval'){if(!interval||Number(interval[1])<1||Number(interval[2])<Number(interval[1])||Number(interval[2])>100000)throw Error('請輸入有效間隔範圍，例如 5-10');overlayOpts.intervalMin=Number(interval[1]);overlayOpts.intervalMax=Number(interval[2]);}
-  if(watermark&&$('secure-font-mode').value==='file')overlayOpts.font=await loadLocalWatermarkFont($('secure-font-file').files[0],Number($('secure-font-face').value)||0);
+  if(watermark&&fontMode()==='file')overlayOpts.font=await loadLocalWatermarkFont($('secure-font-file').files[0],Number($('secure-font-face').value)||0);
   else if(watermark)await document.fonts.load('16px '+JSON.stringify(overlayOpts.font));
   const records=$('secure-pages').value.trim()?JSON.parse($('secure-pages').value):[];
   if(!Array.isArray(records)||records.some(x=>!Number.isInteger(x.page)||x.page<1))throw Error('逐頁資料必須是包含有效 page 的陣列');

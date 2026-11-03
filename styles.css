@@ -13,3 +13,5 @@
 #secure-file[hidden]{display:none!important}#secure-file-details{margin-top:20px}
 
 #secure-font-file-fields[hidden]{display:none!important}#secure-font-file-fields{padding:12px;border:1px solid var(--ui-border);border-radius:10px}#secure-font-note{font-size-adjust:from-font}
+
+#pdf-security .secure-font-options{min-width:0;margin:20px 0;padding:18px;border:1px solid var(--ui-border);border-radius:12px}#pdf-security .secure-font-options legend{font-size:13px;font-weight:750;color:var(--ui-text)}#pdf-security .secure-font-choice{display:flex;align-items:center;gap:10px;margin:12px 0;font-size:14px;color:var(--ui-text);cursor:pointer}#pdf-security .secure-font-choice input[type=radio]{width:18px;height:18px;display:inline-block;margin:0;padding:0;flex:0 0 18px;accent-color:var(--ui-accent)}#pdf-security .secure-font-fields,#pdf-security #secure-font-file-fields{margin-left:28px}#pdf-security .secure-font-options input:disabled,#pdf-security .secure-font-options select:disabled{opacity:.5;cursor:not-allowed}
