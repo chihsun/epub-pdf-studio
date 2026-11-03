@@ -94,18 +94,30 @@ async function makeOverlay(boxes,records,options){
   let resources='<< >>',content='';
   if(text){
    options.appliedPages.push(i+1);
+   status(`正在建立浮水印（第 ${i+1} / ${boxes.length} 頁）…`);
    const scale=Math.min(2,2048/Math.max(w,h));
-   const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.ceil(w*scale));canvas.height=Math.max(1,Math.ceil(h*scale));
-   const ctx=canvas.getContext('2d');const size=options.size*Math.min(canvas.width,canvas.height);
-   ctx.font=`${size}px ${JSON.stringify(options.font)}, sans-serif`;ctx.fillStyle=options.color;ctx.globalAlpha=options.alpha;ctx.textBaseline='alphabetic';
-   const tw=ctx.measureText(text).width, pos=options.position==='random'?Math.floor(Math.random()*5):Number(options.position);
-   const coords=[[canvas.width-tw-8*scale,canvas.height-18*scale],[10*scale,canvas.height-18*scale],[canvas.width-tw-8*scale,2*size],[10*scale,2*size],[(canvas.width-tw)/2,canvas.height/2]][pos];
-   ctx.fillText(text,Math.max(0,coords[0]),Math.min(canvas.height,Math.max(size,coords[1])),canvas.width-16*scale);
+   const fullWidth=Math.max(1,Math.ceil(w*scale)),fullHeight=Math.max(1,Math.ceil(h*scale));
+   const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;
+   let ctx=canvas.getContext('2d');const size=options.size*Math.min(fullWidth,fullHeight);
+   const font=`${size}px ${JSON.stringify(options.font)}, sans-serif`;
+   ctx.font=font;
+   const metrics=ctx.measureText(text),tw=metrics.width, pos=options.position==='random'?Math.floor(Math.random()*5):Number(options.position);
+   const coords=[[fullWidth-tw-8*scale,fullHeight-18*scale],[10*scale,fullHeight-18*scale],[fullWidth-tw-8*scale,2*size],[10*scale,2*size],[(fullWidth-tw)/2,fullHeight/2]][pos];
+   const x=Math.max(0,coords[0]),baseline=Math.min(fullHeight,Math.max(size,coords[1]));
+   const maxTextWidth=Math.max(1,fullWidth-16*scale),drawWidth=Math.min(tw,maxTextWidth);
+   const pad=Math.ceil(size*.25+2);
+   const left=Math.max(0,Math.floor(x-pad)),top=Math.max(0,Math.floor(baseline-size*1.5-pad));
+   const right=Math.min(fullWidth,Math.ceil(x+drawWidth+pad)),bottom=Math.min(fullHeight,Math.ceil(baseline+size*.5+pad));
+   canvas.width=Math.max(1,right-left);canvas.height=Math.max(1,bottom-top);
+   ctx=canvas.getContext('2d');ctx.font=font;ctx.fillStyle=options.color;ctx.globalAlpha=options.alpha;ctx.textBaseline='alphabetic';
+   ctx.fillText(text,x-left,baseline-top,maxTextWidth);
    const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data,rgb=new Uint8Array(canvas.width*canvas.height*3),alpha=new Uint8Array(canvas.width*canvas.height);
    for(let j=0,k=0;j<alpha.length;j++){rgb[k++]=rgba[j*4];rgb[k++]=rgba[j*4+1];rgb[k++]=rgba[j*4+2];alpha[j]=rgba[j*4+3];}
    const mask=writer.stream(await compress(alpha),`/Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode`);
    const image=writer.stream(await compress(rgb),`/Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /SMask ${mask} 0 R`);
-   resources=`<< /XObject << /Im ${image} 0 R >> >>`;content=`q ${w} 0 0 ${h} 0 0 cm /Im Do Q`;
+   const imageWidth=w*canvas.width/fullWidth,imageHeight=h*canvas.height/fullHeight;
+   const imageX=w*left/fullWidth,imageY=h*(fullHeight-top-canvas.height)/fullHeight;
+   resources=`<< /XObject << /Im ${image} 0 R >> >>`;content=`q ${imageWidth} 0 0 ${imageHeight} ${imageX} ${imageY} cm /Im Do Q`;
   }
   const stream=writer.stream(new TextEncoder().encode(content));
   ids.push(writer.add(`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${w} ${h}] /Resources ${resources} /Contents ${stream} 0 R >>`));
