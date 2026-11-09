@@ -84,13 +84,13 @@ async function makeOverlay(boxes,records,options){
  const writer=new PdfWriter(),pages=writer.reserve(),ids=[];options.appliedPages=[];
  let intervalPages=[];
  if(options.pageMode==='interval'){
-  for(let start=1;start<=boxes.length;){const length=options.intervalMin+Math.floor(Math.random()*(options.intervalMax-options.intervalMin+1));const end=Math.min(boxes.length,start+length-1);intervalPages.push(start+Math.floor(Math.random()*(end-start+1)));start=end+1;}
+  for(let start=2;start<=boxes.length;){const length=options.intervalMin+Math.floor(Math.random()*(options.intervalMax-options.intervalMin+1));const end=Math.min(boxes.length,start+length-1);intervalPages.push(start+Math.floor(Math.random()*(end-start+1)));start=end+1;}
  }
- const selected=new Set(options.pageMode==='interval'?intervalPages:options.pageMode==='all'?boxes.map((_,i)=>i+1):options.pageMode==='random'?Array.from({length:boxes.length},(_,i)=>({page:i+1,key:Math.random()})).sort((a,b)=>a.key-b.key).slice(0,Math.min(boxes.length,options.randomCount)).map(x=>x.page):options.pageList.filter(n=>n<=boxes.length));
+ const selected=new Set(options.pageMode==='interval'?intervalPages:options.pageMode==='all'?boxes.slice(1).map((_,i)=>i+2):options.pageMode==='random'?Array.from({length:Math.max(0,boxes.length-1)},(_,i)=>({page:i+2,key:Math.random()})).sort((a,b)=>a.key-b.key).slice(0,options.randomCount).map(x=>x.page):options.pageList.filter(n=>n>1&&n<=boxes.length));
  for(let i=0;i<boxes.length;i++){
   const box=boxes[i],w=box[2]-box[0],h=box[3]-box[1];
   const record=records.find(x=>x.page===i+1);
-  const text=selected.has(i+1)?(options.text||String(record?.text||'')):'';
+  const text=i>0&&selected.has(i+1)?(options.text||String(record?.text||'')):'';
   let resources='<< >>',content='';
   if(text){
    options.appliedPages.push(i+1);
@@ -156,7 +156,7 @@ $('secure-run').addEventListener('click',async()=>{
      if(!Number.isInteger(overlayOpts.randomCount)||overlayOpts.randomCount<1)throw Error('隨機頁數需為正整數');
      status('正在產生浮水印與保護設定…');
      const buffer=watermark?await makeOverlay(message.boxes,records,overlayOpts):null;
-     if(watermark&&!overlayOpts.appliedPages.length)throw Error('沒有可套用的浮水印頁面，請確認頁碼與文字。');
+     if(watermark&&!overlayOpts.appliedPages.length)throw Error('沒有可套用的浮水印頁面（首頁固定排除），請確認頁碼與文字。');
      worker.postMessage({type:'overlay',buffer},buffer?[buffer]:[]);
     }else if(message.type==='result'){
      if(downloadUrl)URL.revokeObjectURL(downloadUrl);
