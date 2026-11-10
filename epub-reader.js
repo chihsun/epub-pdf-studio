@@ -21,6 +21,9 @@ const resolvePath=(base,relative)=>{
   return normalizeZipPath(path);
 };
 const parseMarkup=(xml,kind='application/xml')=>{
+  // XHTML permits self-closing scripts; HTML treats them as unclosed raw text
+  // and consumes the remaining chapter. Preserve the boundary before parsing.
+  if(kind==='text/html')xml=xml.replace(/<script\b((?:"[^"]*"|'[^']*'|[^'">])*)\/\s*>/gi,'<script$1></script>');
   const doc=new DOMParser().parseFromString(xml,kind);
   if(kind!=='text/html' && doc.getElementsByTagName('parsererror').length)throw new Error('EPUB XML 結構不正確');
   return doc;
