@@ -1,12 +1,15 @@
+import {bindPdfMetadata} from './pdf-metadata.js';
 import {inspectLocalFontFile,loadLocalWatermarkFont} from './font-options.js';
 import {PdfWriter} from './pdf-engine.js';
 const $=id=>document.getElementById(id);
 let activeWorker=null,downloadUrl=null,importedPageText=false,selectedPdf=null;
+const secureMetadata=bindPdfMetadata('secure',{getFile:()=>selectedPdf,getPassword:()=>$('secure-input-password').value,onChange:()=>{$('secure-download').hidden=true;}});
 const choosePdf=()=>{if(!activeWorker)$('secure-file').click();};
 const acceptPdf=file=>{
  if(!file||activeWorker)return;
  if(!/\.pdf$/i.test(file.name)){status('請選擇 PDF 檔案');return;}
  selectedPdf=file;
+ secureMetadata.reset();
  $('secure-file-name').textContent=file.name;
  $('secure-file-size').textContent=(file.size/1024/1024).toFixed(2)+' MB · 本機檔案';
  $('secure-file-details').hidden=false;
@@ -127,15 +130,15 @@ async function makeOverlay(boxes,records,options){
  const info=writer.add('<< /Producer (EPUB PDF Studio) >>');
  return (await writer.build(root,info).arrayBuffer());
 }
-$('secure-cancel').addEventListener('click',()=>{activeWorker?.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;status('已取消。');});
+$('secure-cancel').addEventListener('click',()=>{activeWorker?.terminate();activeWorker=null;$('secure-run').disabled=false;secureMetadata.busy(false);$('secure-cancel').hidden=true;status('已取消。');});
 $('secure-run').addEventListener('click',async()=>{
  try{
   const file=selectedPdf;if(!file)throw Error('請選擇 PDF 檔案');
   const encrypt=$('secure-encrypt').checked,watermark=$('secure-watermark').checked;
-  if(!encrypt&&!watermark)throw Error('請選擇加密或浮水印');
+  if(!encrypt&&!watermark&&!secureMetadata.values())throw Error('請選擇加密、浮水印或修改中繼資料');
   const ownerPassword=$('secure-owner-password').value,openPassword=$('secure-open-password').value;
   if(encrypt&&(!ownerPassword||ownerPassword===openPassword))throw Error('請設定與開啟密碼不同的管理密碼');
-  const opts={inputPassword:$('secure-input-password').value,encrypt,ownerPassword,openPassword,print:$('secure-print').value,modify:$('secure-modify').value,extract:$('secure-extract').checked,annotate:$('secure-annotate').checked};
+  const opts={metadata:secureMetadata.values(),inputPassword:$('secure-input-password').value,encrypt,ownerPassword,openPassword,print:$('secure-print').value,modify:$('secure-modify').value,extract:$('secure-extract').checked,annotate:$('secure-annotate').checked};
   if(watermark&&$('secure-random-text').checked)generateWatermarkNumber();
   const overlayOpts={text:importedPageText?'':$('secure-text').value,font:$('secure-font').value.trim()||'sans-serif',size:Number($('secure-size').value),alpha:Number($('secure-alpha').value),color:$('secure-color').value,position:$('secure-position').value,pageMode:$('secure-page-mode').value,pageList:$('secure-page-list').value.split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>0),randomCount:Number($('secure-random-count').value)};
   if(!Number.isFinite(overlayOpts.size)||overlayOpts.size<0.01||overlayOpts.size>0.3||!Number.isFinite(overlayOpts.alpha)||overlayOpts.alpha<0||overlayOpts.alpha>1)throw Error('請確認字級比例與透明度範圍');
@@ -146,6 +149,7 @@ $('secure-run').addEventListener('click',async()=>{
   const records=$('secure-pages').value.trim()?JSON.parse($('secure-pages').value):[];
   if(!Array.isArray(records)||records.some(x=>!Number.isInteger(x.page)||x.page<1))throw Error('逐頁資料必須是包含有效 page 的陣列');
   if(watermark&&!overlayOpts.text&&!records.some(x=>x.applied&&x.text))throw Error('請輸入浮水印文字或匯入逐頁編號');
+  secureMetadata.busy(true);
   $('secure-run').disabled=true;$('secure-cancel').hidden=false;$('secure-download').hidden=true;status('正在檢查 PDF…');
   const worker=activeWorker=new Worker(new URL('./pdf-security.worker.js',import.meta.url));
   worker.onmessage=async event=>{
@@ -162,11 +166,11 @@ $('secure-run').addEventListener('click',async()=>{
      if(downloadUrl)URL.revokeObjectURL(downloadUrl);
      downloadUrl=URL.createObjectURL(new Blob([message.buffer],{type:'application/pdf'}));
      $('secure-download').href=downloadUrl;$('secure-download').download=file.name.replace(/\.pdf$/i,'')+'-protected.pdf';$('secure-download').hidden=false;
-     status(watermark?'已加上 '+overlayOpts.appliedPages.length+' 頁浮水印：'+overlayOpts.appliedPages.join(', ')+'。請下載新檔檢查。':'處理完成，請下載並檢查輸出。');worker.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;
+     status(watermark?'已加上 '+overlayOpts.appliedPages.length+' 頁浮水印：'+overlayOpts.appliedPages.join(', ')+'。請下載新檔檢查。':'處理完成，請下載並檢查輸出。');worker.terminate();activeWorker=null;$('secure-run').disabled=false;secureMetadata.busy(false);$('secure-cancel').hidden=true;
     }else if(message.type==='error')throw Error(message.message);
-   }catch(error){worker.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;status(error.message);}
+   }catch(error){worker.terminate();activeWorker=null;$('secure-run').disabled=false;secureMetadata.busy(false);$('secure-cancel').hidden=true;status(error.message);}
   };
-  worker.onerror=()=>{worker.terminate();activeWorker=null;$('secure-run').disabled=false;$('secure-cancel').hidden=true;status('PDF 處理引擎發生錯誤。');};
+  worker.onerror=()=>{worker.terminate();activeWorker=null;$('secure-run').disabled=false;secureMetadata.busy(false);$('secure-cancel').hidden=true;status('PDF 處理引擎發生錯誤。');};
   const buffer=await file.arrayBuffer();worker.postMessage({type:'secure',buffer,options:opts},[buffer]);
- }catch(error){$('secure-run').disabled=false;$('secure-cancel').hidden=true;status(error.message);}
+ }catch(error){$('secure-run').disabled=false;secureMetadata.busy(false);$('secure-cancel').hidden=true;status(error.message);}
 });

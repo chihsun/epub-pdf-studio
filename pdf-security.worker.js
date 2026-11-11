@@ -6,7 +6,7 @@ self.addEventListener('message',event=>{
  (async()=>{
  self.postMessage({type:'progress',message:'正在載入 PDF 引擎…'});
  await initQpdf();
- const paths=['/secure-in.pdf','/secure.json','/secure-overlay.pdf','/secure-out.pdf'];
+ const paths=['/secure-in.pdf','/secure.json','/secure-overlay.pdf','/secure-out.pdf','/secure-metadata.json'];
  try{
  qpdf.FS.writeFile(paths[0],new Uint8Array(m.buffer));
  const auth=m.options.inputPassword?['--password='+m.options.inputPassword]:[];
@@ -36,6 +36,7 @@ self.addEventListener('message',event=>{
  const args=[...auth,paths[0]];
  if(overlay){qpdf.FS.writeFile(paths[2],new Uint8Array(overlay));args.push('--overlay',paths[2],'--');}
  const o=m.options;
+ if(o.metadata){writeMetadataPatch(data,o.metadata,paths[4]);args.push('--update-from-json='+paths[4]);}
  if(o.encrypt){
  args.push('--encrypt',o.openPassword||'',o.ownerPassword,'256','--print='+o.print,'--modify='+o.modify,'--extract='+(o.extract?'y':'n'),'--annotate='+(o.annotate?'y':'n'),'--');
  }

@@ -318,7 +318,8 @@ export async function inspectEpub(file) {
       if(width>=100&&height>=100&&width<14400&&height<14400){ viewport={width,height,pxWidth:Number(w),pxHeight:Number(h)};break; }
     }
   }
-  const info={title,author,language, fixedLayout,viewport,spine,manifest,coverItem,coverPage,navigation,readingDirection:epubDirection.direction,readingDirectionSource:epubDirection.source,zip,opfPath,fileName:file.name};
+  const pdfMetadata={title,author:getByLocal(metadata,'creator').map(node=>cleanLabel(node.textContent)).filter(Boolean).join('; '),subject:cleanLabel(getByLocal(metadata,'description')[0]?.textContent),keywords:getByLocal(metadata,'subject').map(node=>cleanLabel(node.textContent)).filter(Boolean).join('; '),creator:'EPUB PDF Studio',producer:'EPUB PDF Studio'};
+  const info={pdfMetadata,title,author,language, fixedLayout,viewport,spine,manifest,coverItem,coverPage,navigation,readingDirection:epubDirection.direction,readingDirectionSource:epubDirection.source,zip,opfPath,fileName:file.name};
   return info;
 }
 
@@ -588,7 +589,7 @@ export async function convertEpub(info, options, pdfFont, onProgress=()=>{}) {
   const manualDirection=options.readingDirection==='rtl'?'R2L':options.readingDirection==='ltr'?'L2R':null;
   const readingDirection=manualDirection||info.readingDirection||null;
   const directionSource=manualDirection?'手動覆寫':info.readingDirectionSource;
-  const blob=finishPdf(writer,pagesId,info,pageIds,resolvedBookmarks,readingDirection);
+  const blob=finishPdf(writer,pagesId,options.metadata??info.pdfMetadata??info,pageIds,resolvedBookmarks,readingDirection);
   onProgress(1,'轉換完成');
   return {blob,pageCount,sections,imageCount,bookmarkCount,readingDirection,directionSource,warnings,fileName:`${escapeFile(info.title)}.pdf`,pageSize:[width,height]};
 }

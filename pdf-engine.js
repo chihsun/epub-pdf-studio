@@ -529,6 +529,8 @@ export function finishPdf(writer,pagesId,metadata,pageIds=[],bookmarks=[],readin
   }
   const viewerPreferences=['L2R','R2L'].includes(readingDirection)?` /ViewerPreferences << /Direction /${readingDirection} >>`:'';
   const root=writer.add(`<< /Type /Catalog /Pages ${pagesId} 0 R${outlinesRef}${viewerPreferences} >>`);
-  const info=writer.add(`<< /Title ${pdfUnicodeString(metadata.title||'EPUB 轉 PDF')} /Author ${pdfUnicodeString(metadata.author||'')} /Creator (EPUB PDF Studio) /Producer (EPUB PDF Studio) >>`);
+  const values={title:metadata.title??'EPUB 轉 PDF',author:metadata.author??'',subject:metadata.subject??'',keywords:metadata.keywords??'',creator:metadata.creator??'EPUB PDF Studio',producer:metadata.producer??'EPUB PDF Studio'};
+  const entries=Object.entries(values).filter(([,value])=>String(value).trim()).map(([key,value])=>`/${key[0].toUpperCase()+key.slice(1)} ${pdfUnicodeString(String(value))}`);
+  const info=writer.add(`<< ${entries.join(' ')} >>`);
   return writer.build(root,info);
 }

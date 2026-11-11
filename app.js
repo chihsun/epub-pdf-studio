@@ -1,3 +1,4 @@
+import {bindPdfMetadata} from './pdf-metadata.js';
 import './pdf-security.js';
 import {inspectEpub,convertEpub} from './epub-reader.js';
 import {inspectFixedLayoutEpub,optimizeFixedLayoutEpub} from './epub-image-optimizer.js';
@@ -9,6 +10,7 @@ import {startPdfOptimization} from './pdf-optimizer.js';
 const $=id=>document.getElementById(id);
 const state={book:null,file:null,output:null,font:null,loading:false,pdfFile:null,pdfOutput:null,pdfTask:null,pdfLoading:false,imageBook:null,imageOutput:null,imageLoading:false};
 let qualitySettings=loadQualitySettings();
+const pdfMetadata=bindPdfMetadata('pdf',{getFile:()=>state.pdfFile,getPassword:()=>$('pdf-password').value,onChange:clearPdfOutput});
 const FONT_URL=new URL('./fonts/reading-ming.ttf',import.meta.url).href;
 const fontOptions=bindFontOptions();
 document.getElementById('output-font').addEventListener('change',clearOutput);
@@ -23,6 +25,7 @@ const getOptions=()=>({
   readingDirection:activeRadio('reading-direction')||'auto',
   fontSize:Number($('font-size').value),marginMM:Number($('margin').value),lineHeight:Number($('line-height').value),
   quality:resolveQualitySettings(qualitySettings),
+  metadata:Object.fromEntries(Array.from(document.querySelectorAll('[data-pdf-metadata]'),input=>[input.dataset.pdfMetadata,input.value.trim()])),
   includeCover:$('include-cover').checked,includeImages:$('include-images').checked,
   chapterBreak:$('chapter-break').checked,pageNumbers:$('page-numbers').checked
 });
@@ -52,6 +55,7 @@ async function acceptFile(file){
   try{
     const book=await inspectEpub(file);
     state.book=book;
+    restorePdfMetadata();
     await fontOptions.inspect(book);
     $('book-title').textContent=book.title;
     $('book-author').textContent=book.author;
@@ -134,7 +138,18 @@ function bindWorkspaceNavigation(){
   }));
   document.querySelectorAll('[data-workspace]').forEach(button=>button.addEventListener('click',()=>setWorkspace(button.dataset.workspace,{scroll:true})));
 }
+function setPdfMetadata(values={}){
+  for(const input of document.querySelectorAll('[data-pdf-metadata]'))input.value=values[input.dataset.pdfMetadata]??'';
+  clearOutput();
+}
+function restorePdfMetadata(){
+  setPdfMetadata(state.book?.pdfMetadata??{creator:'EPUB PDF Studio',producer:'EPUB PDF Studio'});
+}
+$('metadata-restore').addEventListener('click',restorePdfMetadata);
+$('metadata-clear').addEventListener('click',()=>setPdfMetadata());
+for(const input of document.querySelectorAll('[data-pdf-metadata]'))input.addEventListener('input',clearOutput);
 function reset(){
+  restorePdfMetadata();
   document.querySelector('input[name="page-size"][value="A4"]').checked=true;
   document.querySelector('input[name="orientation"][value="auto"]').checked=true;
   document.querySelector('input[name="reading-direction"][value="auto"]').checked=true;
@@ -149,6 +164,7 @@ function reset(){
 async function convert(){
   if(!state.book||state.loading)return;
   state.loading=true;
+  $('metadata-fields').disabled=true;
   $('convert-button').disabled=true;
   $('choose-button').disabled=true;
   $('file-input').disabled=true;
@@ -171,7 +187,7 @@ async function convert(){
     }
   }catch(e){setError(e?.message||'轉換失敗，請嘗試更換書籍或簡化設定');$('status-panel').hidden=true;}
   finally{
-    state.loading=false;$('convert-button').disabled=!state.book;$('choose-button').disabled=false;
+    state.loading=false;$('metadata-fields').disabled=false;$('convert-button').disabled=!state.book;$('choose-button').disabled=false;
     $('file-input').disabled=false;$('convert-button-label').textContent='重新轉換 PDF';
   }
 }
@@ -260,6 +276,7 @@ function acceptPdfFile(file){
     $('pdf-error-panel').textContent='請選擇 PDF 檔案。';$('pdf-error-panel').hidden=false;return;
   }
   state.pdfFile=file;
+  pdfMetadata.reset();
   $('pdf-file-name').textContent=file.name;
   $('pdf-file-size').textContent=`${formatBytes(file.size)} · 本機檔案`;
   $('pdf-file-pages').textContent=file.size>150*1024*1024?'大型 PDF 可能使用較多瀏覽器記憶體':'頁數將於結構檢查後顯示';
@@ -277,6 +294,7 @@ function pdfProgress(phase,message){
 async function optimizePdf(){
   if(!state.pdfFile||state.pdfLoading)return;
   state.pdfLoading=true;clearPdfMessages();
+  pdfMetadata.busy(true);
   $('pdf-optimize-button').disabled=true;$('pdf-choose-button').disabled=true;
   $('pdf-file-input').disabled=true;$('pdf-cancel-button').hidden=false;
   $('pdf-optimize-label').textContent='最佳化進行中…';
@@ -286,6 +304,7 @@ async function optimizePdf(){
       quality:resolveQualitySettings(qualitySettings),
       lossyImages:$('pdf-lossy-images').checked,
       objectStreams:$('pdf-object-streams').checked,
+      metadata:pdfMetadata.values(),
       password:$('pdf-password').value
     },message=>pdfProgress(message.phase,message.message));
     const result=await state.pdfTask.promise;
@@ -317,7 +336,7 @@ async function optimizePdf(){
       $('pdf-status-panel').hidden=true;
     }
   }finally{
-    state.pdfLoading=false;state.pdfTask=null;
+    state.pdfLoading=false;pdfMetadata.busy(false);state.pdfTask=null;
     $('pdf-optimize-button').disabled=!state.pdfFile;
     $('pdf-choose-button').disabled=false;$('pdf-file-input').disabled=false;
     $('pdf-cancel-button').hidden=true;$('pdf-optimize-label').textContent='重新最佳化 PDF';

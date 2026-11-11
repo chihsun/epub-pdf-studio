@@ -1,4 +1,5 @@
 /* qpdf runs in a dedicated worker so large documents do not block the UI. */
+importScripts('./pdf-metadata.worker.js');
 let qpdfPromise;
 let qpdf;
 let stdout=[];
@@ -77,7 +78,8 @@ async function optimize(message){
   const inputPath='/epub-pdf-studio-input.pdf';
   const outputPath='/epub-pdf-studio-optimized.pdf';
   const signaturePath='/epub-pdf-studio-signature-check.json';
-  cleanup([inputPath,outputPath,signaturePath]);
+  const metadataPath='/metadata-update.json';
+  cleanup([inputPath,outputPath,signaturePath,metadataPath]);
   qpdf.FS.writeFile(inputPath,bytes);
   try{
     const password=String(options.password||'');
@@ -119,6 +121,7 @@ async function optimize(message){
       error.code='PDF_PAGE_COUNT_FAILED';
       throw error;
     }
+    if(options.metadata)writeMetadataPatch(JSON.parse(signatureJson),options.metadata,metadataPath);
     cleanup([signaturePath]);
 
     self.postMessage({type:'progress',phase:'optimizing',message:'正在進行無損結構與圖片處理'});
@@ -134,6 +137,7 @@ async function optimize(message){
       }
       args.push('--optimize-images',`--jpeg-quality=${jpegQuality}`);
     }
+    if(options.metadata)args.push('--update-from-json='+metadataPath);
     args.push(inputPath,outputPath);
     const result=runQpdf(args);
     if(result.exitCode!==0&&result.exitCode!==3){
@@ -152,6 +156,6 @@ async function optimize(message){
       result:{buffer:outputBytes.buffer,pageCount,warnings,exitCode:result.exitCode,lossyImages:Boolean(options.lossyImages)}
     },[outputBytes.buffer]);
   }finally{
-    cleanup([inputPath,outputPath,signaturePath]);
+    cleanup([inputPath,outputPath,signaturePath,metadataPath]);
   }
 }
