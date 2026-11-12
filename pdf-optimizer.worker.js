@@ -83,7 +83,7 @@ async function optimize(message){
   qpdf.FS.writeFile(inputPath,bytes);
   try{
     const password=String(options.password||'');
-    const auth=password? [`--password=${password}`] : [];
+    let auth=password? [`--password=${password}`] : [];
     self.postMessage({type:'progress',phase:'checking',message:'正在檢查 PDF 結構與密碼'});
     const check=runQpdf([...auth,'--check',inputPath]);
     if(check.exitCode!==0){
@@ -121,14 +121,33 @@ async function optimize(message){
       error.code='PDF_PAGE_COUNT_FAILED';
       throw error;
     }
-    if(options.metadata)writeMetadataPatch(JSON.parse(signatureJson),options.metadata,metadataPath);
+    if(options.rasterize){
+      const metadata=options.metadata||readDocumentMetadata(JSON.parse(signatureJson));
+      const rendered=await new Promise(resolve=>{
+        const receive=event=>{
+          if(event.data?.type!=='rasterized')return;
+          self.removeEventListener('message',receive);resolve(event.data.buffer);
+        };
+        self.addEventListener('message',receive);
+        const source=bytes.slice();
+        self.postMessage({type:'rasterize',buffer:source.buffer},[source.buffer]);
+      });
+      qpdf.FS.writeFile(inputPath,new Uint8Array(rendered));auth=[];
+      const renderedCheck=runQpdf(['--check',inputPath]);
+      if(renderedCheck.exitCode!==0)throw Error('轉圖 PDF 結構檢查失敗。');
+      const inspect=runQpdf(['--json',inputPath,signaturePath]);
+      if(inspect.exitCode!==0)throw Error('無法驗證轉圖 PDF。');
+      const data=JSON.parse(qpdf.FS.readFile(signaturePath,{encoding:'utf8'}));
+      if(data.pages?.length!==pageCount)throw Error('轉圖 PDF 頁數不符。');
+      writeMetadataPatch(data,metadata,metadataPath);
+    }else if(options.metadata)writeMetadataPatch(JSON.parse(signatureJson),options.metadata,metadataPath);
     cleanup([signaturePath]);
 
     self.postMessage({type:'progress',phase:'optimizing',message:'正在進行無損結構與圖片處理'});
     const quality=options.quality||{};
     const args=[...auth,'--compress-streams=y','--decode-level=generalized','--recompress-flate','--compression-level=9'];
     args.push(options.objectStreams?'--object-streams=generate':'--object-streams=preserve');
-    if(options.lossyImages){
+    if(options.lossyImages&&!options.rasterize){
       const jpegQuality=Number(quality.jpegQuality);
       if(!Number.isInteger(jpegQuality)||jpegQuality<40||jpegQuality>100){
         const error=new Error('圖片 JPEG 品質設定無效，請重新選擇品質預設。');
@@ -137,7 +156,7 @@ async function optimize(message){
       }
       args.push('--optimize-images',`--jpeg-quality=${jpegQuality}`);
     }
-    if(options.metadata)args.push('--update-from-json='+metadataPath);
+    if(options.metadata||options.rasterize)args.push('--update-from-json='+metadataPath);
     args.push(inputPath,outputPath);
     const result=runQpdf(args);
     if(result.exitCode!==0&&result.exitCode!==3){
@@ -153,7 +172,7 @@ async function optimize(message){
     const warnings=result.exitCode===3?[result.stderr||result.stdout||'qpdf 完成時回報警告，請比對原始檔。']:[];
     self.postMessage({
       type:'result',
-      result:{buffer:outputBytes.buffer,pageCount,warnings,exitCode:result.exitCode,lossyImages:Boolean(options.lossyImages)}
+      result:{buffer:outputBytes.buffer,pageCount,warnings,exitCode:result.exitCode,lossyImages:Boolean(options.lossyImages),rasterized:Boolean(options.rasterize),rasterDpi:options.rasterDpi}
     },[outputBytes.buffer]);
   }finally{
     cleanup([inputPath,outputPath,signaturePath,metadataPath]);

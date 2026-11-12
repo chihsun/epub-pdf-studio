@@ -15,3 +15,7 @@
 ## PDF 中繼資料局部測試
 
 `node tests/metadata.cjs`：使用 bundled qpdf WASM 驗證 EPUB PDF writer 的六欄與空值、最佳化保留／修改／清空、缺少 Info、文件 XMP 移除及加密輸出的屬性。只產生記憶體內合成單頁 PDF，不使用實際書籍。
+
+## PDF 整頁轉圖局部測試
+
+以本機 HTTP 伺服器開啟 `tests/pdf-rasterization.html`，頁面應顯示 PASS。使用記憶體內合成的原生文字與圖片頁，驗證 Flate／JPEG、旋轉與裁切後尺寸、像素、六欄中的標題與作者保留、一般模式保留文字、DPI 驗證，以及開始前／轉圖中的取消。

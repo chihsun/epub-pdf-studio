@@ -1,7 +1,7 @@
 const STORAGE_KEY='epub-pdf-studio-quality-settings-v1';
 
 export const QUALITY_PRESETS=Object.freeze({
-  original:Object.freeze({id:'original',label:'原始品質',targetDpi:null,thresholdDpi:null,jpegQuality:null,description:'EPUB 圖片不重新取樣；JPEG 直接嵌入，其餘圖片以無損方式存入 PDF。PDF 最佳化只重組結構及無損壓縮。'}),
+  original:Object.freeze({id:'original',label:'原始品質',targetDpi:null,thresholdDpi:null,jpegQuality:null,description:'EPUB 圖片不重新取樣；JPEG 直接嵌入，其餘圖片以無損方式存入 PDF。PDF 未啟用整頁轉圖時只重組結構及無損壓縮；啟用轉圖後依獨立 DPI 繪製，無損儲存轉出的像素。'}),
   high:Object.freeze({id:'high',label:'高品質',targetDpi:300,thresholdDpi:450,jpegQuality:90,description:'EPUB 圖片高於 450 DPI 才縮至 300 DPI，JPEG 品質 90。'}),
   balanced:Object.freeze({id:'balanced',label:'均衡',targetDpi:150,thresholdDpi:225,jpegQuality:84,description:'EPUB 圖片高於 225 DPI 才縮至 150 DPI，JPEG 品質 84。'}),
   compression:Object.freeze({id:'compression',label:'高壓縮',targetDpi:120,thresholdDpi:180,jpegQuality:72,description:'EPUB 圖片高於 180 DPI 才縮至 120 DPI，JPEG 品質 72；細字、線稿及 OCR 邊緣可能變模糊。'}),

@@ -293,6 +293,7 @@ function pdfProgress(phase,message){
 }
 async function optimizePdf(){
   if(!state.pdfFile||state.pdfLoading)return;
+  if($('pdf-rasterize').checked&&!$('pdf-raster-dpi').reportValidity())return;
   state.pdfLoading=true;clearPdfMessages();
   pdfMetadata.busy(true);
   $('pdf-optimize-button').disabled=true;$('pdf-choose-button').disabled=true;
@@ -303,6 +304,8 @@ async function optimizePdf(){
     state.pdfTask=startPdfOptimization(state.pdfFile,{
       quality:resolveQualitySettings(qualitySettings),
       lossyImages:$('pdf-lossy-images').checked,
+      rasterize:$('pdf-rasterize').checked,
+      rasterDpi:Number($('pdf-raster-dpi').value),
       objectStreams:$('pdf-object-streams').checked,
       metadata:pdfMetadata.values(),
       password:$('pdf-password').value
@@ -314,7 +317,7 @@ async function optimizePdf(){
     const difference=state.pdfFile.size-blob.size;
     const changePercent=state.pdfFile.size?Math.abs(difference)/state.pdfFile.size*100:0;
     const sizeText=difference>0?`減少 ${changePercent.toFixed(1)}%`:difference<0?`比原始檔大 ${changePercent.toFixed(1)}%`:'大小相同';
-    const qualityText=result.lossyImages?' · 已啟用 JPEG 圖片重壓縮':' · 無損圖片模式';
+    const qualityText=result.rasterized?` · 已整頁轉圖 ${result.rasterDpi} DPI · ${result.lossyImages?'JPEG 壓縮':'像素無損壓縮'}`:result.lossyImages?' · 已啟用 JPEG 圖片重壓縮':' · 無損圖片模式';
     $('pdf-result-stats').textContent=`${result.pageCount} 頁 · ${formatBytes(state.pdfFile.size)} → ${formatBytes(blob.size)} · ${sizeText}${qualityText}`;
     $('pdf-result-panel').hidden=false;
     $('pdf-status-panel').hidden=true;
@@ -379,6 +382,13 @@ zone.addEventListener('drop',e=>{const f=e.dataTransfer?.files?.[0];if(f)acceptF
 $('reset-button').addEventListener('click',reset);
 for(const el of document.querySelectorAll('#epub-workspace .options-panel input'))el.addEventListener('input',()=>{updateRangeLabels();clearOutput();});
 for(const el of document.querySelectorAll('#pdf-optimizer .options-panel input'))el.addEventListener('input',()=>clearPdfOutput());
+$('pdf-rasterize').addEventListener('change',()=>{
+  const enabled=$('pdf-rasterize').checked;
+  $('pdf-raster-settings').hidden=!enabled;
+  $('pdf-raster-help').hidden=!enabled;
+  $('pdf-raster-dpi').disabled=!enabled;
+  $('pdf-rasterize').setAttribute('aria-expanded',String(enabled));
+});
 $('convert-button').addEventListener('click',convert);
 $('download-button').addEventListener('click',download);
 for(const panel of document.querySelectorAll('[data-quality-settings]')){

@@ -1,4 +1,6 @@
+import {rasterizePdf} from './pdf-rasterizer.js';
 export function startPdfOptimization(file,options,onProgress=()=>{}){
+  const controller=new AbortController();
   const worker=new Worker(new URL('./pdf-optimizer.worker.js',import.meta.url));
   let settled=false;
   let resolveTask,rejectTask;
@@ -7,11 +9,18 @@ export function startPdfOptimization(file,options,onProgress=()=>{}){
     if(settled)return;
     settled=true;
     worker.terminate();
+    controller.abort();
     callback(value);
   };
   worker.onmessage=event=>{
     const message=event.data||{};
     if(message.type==='progress'){onProgress(message);return;}
+    if(message.type==='rasterize'){
+      rasterizePdf(message.buffer,options,onProgress,controller.signal).then(buffer=>{
+        if(!settled)worker.postMessage({type:'rasterized',buffer},[buffer]);
+      }).catch(error=>finish(rejectTask,error));
+      return;
+    }
     if(message.type==='result')finish(resolveTask,message.result);
     if(message.type==='error'){
       const error=new Error(message.message||'PDF 最佳化失敗');

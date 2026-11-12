@@ -1,0 +1,54 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>PDF rasterization test</title><body>RUNNING<script type="module">
+import {PdfWriter} from '../pdf-engine.js';
+import {startPdfOptimization} from '../pdf-optimizer.js';
+import {rasterizePdf} from '../pdf-rasterizer.js';
+import * as pdfjs from '../vendor/pdfjs/pdf.mjs';
+const assert=(value,message)=>{if(!value)throw Error(message);};
+async function fixture(){
+  const w=new PdfWriter(),pages=w.reserve();
+  const font=w.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const text=w.stream(new TextEncoder().encode('BT /F1 14 Tf 10 50 Td (Native text) Tj ET'));
+  const a=w.add(`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 200 100] /CropBox [10 10 190 90] /Rotate 90 /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${text} 0 R >>`);
+  const image=w.stream(new Uint8Array([255,0,0]),'/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8');
+  const content=w.stream(new TextEncoder().encode('q 100 0 0 150 0 0 cm /Im Do Q'));
+  const b=w.add(`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 100 150] /Resources << /XObject << /Im ${image} 0 R >> >> /Contents ${content} 0 R >>`);
+  w.set(pages,`<< /Type /Pages /Count 2 /Kids [${a} 0 R ${b} 0 R] >>`);
+  const root=w.add(`<< /Type /Catalog /Pages ${pages} 0 R >>`),info=w.add('<< /Title (Raster test) /Author (Test author) >>');
+  return w.build(root,info);
+}
+async function inspect(result,jpeg){
+  const loading=pdfjs.getDocument({data:new Uint8Array(result.buffer.slice(0))}),pdf=await loading.promise;
+  try{
+    assert(pdf.numPages===2,'page count');
+    const meta=await pdf.getMetadata();assert(meta.info.Title==='Raster test'&&meta.info.Author==='Test author','preserve metadata');
+    for(let n=1;n<=2;n++){
+      const page=await pdf.getPage(n),box=page.getViewport({scale:1});
+      assert(box.width===(n===1?80:100)&&box.height===(n===1?180:150),'crop and rotation dimensions');
+      assert((await page.getTextContent()).items.length===0,'no text layer');
+      const ops=await page.getOperatorList();assert(ops.fnArray.includes(pdfjs.OPS.paintImageXObject),'page image');
+      if(n===2){const c=document.createElement('canvas');c.width=100;c.height=150;const ctx=c.getContext('2d');await page.render({canvasContext:ctx,viewport:box}).promise;const p=ctx.getImageData(50,50,1,1).data;assert(p[0]>240&&p[1]<15&&p[2]<15,'rendered pixels');}
+    }
+    const raw=new TextDecoder('latin1').decode(result.buffer);
+    assert(raw.includes(jpeg?'/DCTDecode':'/FlateDecode'),'image encoding');
+  }finally{await pdf.loadingTask.destroy();}
+}
+try{
+  const blob=await fixture();
+  for(const lossyImages of [false,true]){
+    const result=await startPdfOptimization(blob,{rasterize:true,rasterDpi:144,lossyImages,quality:{jpegQuality:84}}).promise;
+    assert(result.rasterized&&result.pageCount===2,'raster result');await inspect(result,lossyImages);
+  }
+  const original=await startPdfOptimization(blob,{}).promise;
+  const pdf=await pdfjs.getDocument({data:new Uint8Array(original.buffer)}).promise;
+  assert((await (await pdf.getPage(1)).getTextContent()).items.length>0,'normal mode retains native text');await pdf.loadingTask.destroy();
+  let invalid=false;try{await rasterizePdf(await blob.arrayBuffer(),{rasterDpi:0},()=>{},new AbortController().signal);}catch{invalid=true;}assert(invalid,'invalid DPI rejected');
+  const task=startPdfOptimization(blob,{rasterize:true,rasterDpi:300});task.cancel();
+  let cancelled=false;try{await task.promise;}catch(e){cancelled=e.name==='AbortError';}assert(cancelled,'cancel');
+  let active;
+  active=startPdfOptimization(blob,{rasterize:true,rasterDpi:300},m=>{if(m.phase==='rasterizing')active.cancel();});
+  cancelled=false;try{await active.promise;}catch(e){cancelled=e.name==='AbortError';}assert(cancelled,'cancel during rasterization');
+  document.body.textContent='PASS: native + image pages, Flate/JPEG, crop/rotation, pixels, metadata, normal mode, invalid DPI, cancel';
+}catch(e){document.body.textContent='FAIL: '+e.message;}
+</script></body></html>
+
+
