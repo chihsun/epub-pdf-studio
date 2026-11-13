@@ -1,0 +1,76 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>Watermark finishing smoke test</title><body>
+<h1>浮水印平面化／整頁轉圖驗證</h1><p id="result">RUNNING</p><ol id="checks"></ol>
+<iframe id="app" src="../index.html#pdf-security" style="width:1px;height:1px;border:0" title="測試工作區"></iframe>
+<script type="module">
+import {PdfWriter} from '../pdf-engine.js';
+import * as pdfjs from '../vendor/pdfjs/pdf.mjs';
+pdfjs.GlobalWorkerOptions.workerSrc=new URL('../vendor/pdfjs/pdf.worker.mjs',import.meta.url).href;
+const assert=(v,m)=>{if(!v)throw Error(m);};
+const frame=document.querySelector('#app');
+if(!frame.contentDocument?.getElementById('secure-run'))await new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+const doc=frame.contentDocument,$=id=>doc.getElementById(id),sleep=()=>new Promise(r=>setTimeout(r,25));
+async function until(fn){const deadline=Date.now()+45000;while(!fn()){if(Date.now()>deadline)throw Error('等待產生 PDF 逾時：'+$('secure-status').textContent);await sleep();}}
+function toggle(id,checked){$(id).checked=checked;$(id).dispatchEvent(new Event('change',{bubbles:true}));}
+function pass(text){const li=document.createElement('li');li.textContent='PASS: '+text;document.querySelector('#checks').append(li);}
+try{
+ await until(()=>$('secure-font').disabled===false&&$('secure-run'));
+ const w=new PdfWriter(),pages=w.reserve(),font=w.add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'),ids=[];
+ for(let n=1;n<=2;n++){const content=w.stream(new TextEncoder().encode(`BT /F0 12 Tf 10 270 Td (Original page ${n}) Tj ET`));ids.push(w.add(`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 200 300] /Resources << /Font << /F0 ${font} 0 R >> >> /Contents ${content} 0 R >>`));}
+ w.set(pages,`<< /Type /Pages /Count 2 /Kids [${ids.map(id=>id+' 0 R').join(' ')}] >>`);
+ const blob=w.build(w.add(`<< /Type /Catalog /Pages ${pages} 0 R >>`),w.add('<< /Title (Finishing test) /Author (Original author) >>'));
+ const transfer=new DataTransfer();transfer.items.add(new File([blob],'finishing.pdf',{type:'application/pdf'}));$('secure-file').files=transfer.files;$('secure-file').dispatchEvent(new Event('change',{bubbles:true}));
+ toggle('secure-watermark',true);toggle('secure-mode-merged',true);
+ $('secure-text').value='中文 TEST 123';$('secure-text').dispatchEvent(new Event('input',{bubbles:true}));$('secure-position').value='4';
+ async function run(password=''){
+  $('secure-run').click();await until(()=>$('secure-run').disabled);await until(()=>!$('secure-run').disabled);
+  assert(!$('secure-download').hidden,$('secure-status').textContent);
+  const bytes=new Uint8Array(await (await fetch($('secure-download').href)).arrayBuffer());
+  const loading=pdfjs.getDocument({data:bytes.slice(),password}),pdf=await loading.promise;
+  assert(pdf.numPages===2,'two pages');const meta=await pdf.getMetadata();assert(meta.info.Title==='Finishing test'&&meta.info.Author==='Original author','metadata preserved');
+  return {pdf,loading,bytes};
+ }
+ let output=await run();
+ try{
+  const first=await output.pdf.getPage(1),second=await output.pdf.getPage(2);
+  assert((await second.getTextContent()).items.map(x=>x.str).join('').includes('Original page 2'),'flatten preserves original text');
+  assert(!(await second.getTextContent()).items.some(x=>x.str.includes('TEST')),'watermark text is no longer editable text');
+  assert(!(await first.getOperatorList()).fnArray.includes(pdfjs.OPS.paintImageXObject),'first page no watermark');
+  assert((await second.getOperatorList()).fnArray.includes(pdfjs.OPS.paintImageXObject),'flattened watermark image');
+  const raw=new TextDecoder().decode(output.bytes);assert(!raw.includes('WatermarkSettings')&&!raw.includes('/ADBE_CompoundType'),'no editable watermark settings');
+ }finally{await output.loading.destroy();}
+ pass('合併圖層模式保留原生文字，新增浮水印為圖片且不含編修設定，首頁未加浮水印');
+ toggle('secure-mode-editable',true);toggle('secure-rasterize',true);toggle('secure-raster-after',true);$('secure-raster-dpi').value='72';
+ toggle('secure-encrypt',true);$('secure-owner-password').value='test-owner';$('secure-open-password').value='test-open';
+ output=await run('test-open');
+ try{
+  for(let n=1;n<=2;n++){const page=await output.pdf.getPage(n);assert((await page.getTextContent()).items.length===0,'no original or watermark text layer');assert((await page.getOperatorList()).fnArray.includes(pdfjs.OPS.paintImageXObject),'whole page image');}
+  const page=await output.pdf.getPage(2),viewport=page.getViewport({scale:1.5}),canvas=document.createElement('canvas');canvas.width=viewport.width;canvas.height=viewport.height;document.body.append(canvas);
+  const ctx=canvas.getContext('2d');await page.render({canvasContext:ctx,viewport}).promise;
+  const pixels=ctx.getImageData(0,canvas.height/3,canvas.width,canvas.height/3).data;let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]<245)ink++;assert(ink>30,'watermark visible in raster image');
+ }finally{await output.loading.destroy();}
+ pass('加完浮水印再整頁轉圖，首頁也轉圖，原生文字／浮水印文字層移除，轉圖後加密並保留文件屬性');
+ toggle('secure-raster-before',true);
+ output=await run('test-open');
+ try{
+  const first=await output.pdf.getPage(1),second=await output.pdf.getPage(2);
+  assert((await first.getTextContent()).items.length===0,'source first page rasterized');
+  const text=(await second.getTextContent()).items.map(x=>x.str).join('');
+  assert(text.includes('中文 TEST 123')&&!text.includes('Original'),'before mode keeps editable watermark, removes source text');
+  assert((await second.getOperatorList()).fnArray.includes(pdfjs.OPS.paintImageXObject),'raster page under editable watermark');
+ }finally{await output.loading.destroy();}
+ pass('加浮水印之前轉圖：原頁面成為圖片，新增的中英文浮水印仍是可編修文字，加密與屬性保留');
+ toggle('secure-raster-after',true);
+ toggle('secure-encrypt',false);toggle('secure-watermark',false);toggle('secure-raster-lossy',true);$('secure-raster-quality').value='80';
+ w.set(ids[0],w.objects[ids[0]].replace('/Type /Page','/Rotate 90 /Type /Page'));
+ const rotated=w.build(w.add(`<< /Type /Catalog /Pages ${pages} 0 R >>`),w.add('<< /Title (Finishing test) /Author (Original author) >>'));
+ const rotatedInput=new DataTransfer();rotatedInput.items.add(new File([rotated],'rotated.pdf',{type:'application/pdf'}));$('secure-file').files=rotatedInput.files;$('secure-file').dispatchEvent(new Event('change',{bubbles:true}));
+ output=await run();try{assert(new TextDecoder().decode(output.bytes).includes('/DCTDecode'),'JPEG output');}finally{await output.loading.destroy();}
+ pass('不新增浮水印也能單獨整頁轉圖，支援旋轉頁面，JPEG 品質設定生效');
+ $('secure-raster-dpi').value='300';
+ const observer=new MutationObserver(()=>{if($('secure-status').textContent.includes('正在將每頁')){observer.disconnect();$('secure-cancel').click();}});
+ observer.observe($('secure-status'),{childList:true,subtree:true,characterData:true});
+ $('secure-run').click();await until(()=>$('secure-run').disabled);await until(()=>!$('secure-run').disabled);observer.disconnect();assert($('secure-status').textContent.includes('取消'),'cancel');assert($('secure-download').hidden,'cancel exposes no output');
+ pass('轉圖中可取消，不會顯示未完成輸出');
+ document.querySelector('#result').textContent='PASS: all watermark finishing smoke checks';
+}catch(e){document.querySelector('#result').textContent='FAIL: '+e.message;}
+</script></body></html>

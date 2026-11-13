@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>Editable watermark smoke test</title><body><p id="result">RUNNING</p><script type="module">
+import {PdfWriter,addEmbeddedFont} from '../pdf-engine.js';
+import {loadEditableWatermarkFont} from '../font-options.js';
+import {addEditableWatermark} from '../pdf-watermark.js';
+import * as pdfjs from '../vendor/pdfjs/pdf.mjs';
+pdfjs.GlobalWorkerOptions.workerSrc=new URL('../vendor/pdfjs/pdf.worker.mjs',import.meta.url).href;
+const assert=(v,m)=>{if(!v)throw Error(m);};
+try{
+ const font=await loadEditableWatermarkFont();
+ const w=new PdfWriter(),pages=w.reserve(),fontRef=await addEmbeddedFont(w,font);
+ const mark=addEditableWatermark(w,'中文浮水印 ABC 123',{width:595,height:842,originX:0,originY:0,position:'4',size:.1,alpha:.5,color:'#424242',pageNumber:1,pageNumbers:[1]},fontRef,font);
+ const stream=w.stream(new TextEncoder().encode(mark.content));
+ const page=w.add(`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 595 842] /Resources ${mark.resources} /Contents ${stream} 0 R >>`);
+ w.set(pages,`<< /Type /Pages /Count 1 /Kids [${page} 0 R] >>`);
+ const root=w.add(`<< /Type /Catalog /Pages ${pages} 0 R >>`),info=w.add('<< >>');
+ const bytes=new Uint8Array(await w.build(root,info).arrayBuffer());
+ const loading=pdfjs.getDocument({data:bytes}),pdf=await loading.promise;
+ try{
+  const page=await pdf.getPage(1),text=(await page.getTextContent()).items.map(x=>x.str).join('');assert(text.includes('中文浮水印 ABC 123'),'Chinese text readback');
+  const canvas=document.createElement('canvas'),viewport=page.getViewport({scale:.7});canvas.width=viewport.width;canvas.height=viewport.height;document.body.append(canvas);
+  const ctx=canvas.getContext('2d');await page.render({canvasContext:ctx,viewport}).promise;
+  const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;let ink=0;for(let i=0;i<data.length;i+=4)if(data[i]<240)ink++;assert(ink>100,'visible rendered glyphs');
+ }finally{await loading.destroy();}
+ document.querySelector('#result').textContent='PASS: built-in Chinese font embedded, Chinese/English text read back, visible page rendered.';
+}catch(e){document.querySelector('#result').textContent='FAIL: '+e.message;}
+</script></body></html>

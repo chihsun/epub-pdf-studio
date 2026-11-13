@@ -161,3 +161,34 @@ export async function loadLocalWatermarkFont(file,index=0){
   document.fonts.add(face);
   return face.family;
 }
+
+export async function loadEditableWatermarkFont(file,index=0){
+  let bytes;
+  if(file){await inspectLocalFontFile(file);bytes=extractFontFace(await localFontCache.get(file),index);}
+  else{
+    const response=await fetch(new URL('./fonts/reading-ming.ttf',import.meta.url));
+    if(!response.ok)throw Error('無法載入內建浮水印字型');
+    bytes=new Uint8Array(await response.arrayBuffer());
+  }
+  validateTrueTypeOutline(bytes);
+  const font=await loadPdfFont(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),{family:'EPUBStudioEditableWatermark'});
+  // Use the font's real PostScript name in both the embedded PDF font and editable settings.
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  for(let i=0;i<view.getUint16(4);i++){
+    const p=12+i*16;if(String.fromCharCode(...bytes.subarray(p,p+4))!=='name')continue;
+    const base=view.getUint32(p+8),count=view.getUint16(base+2),storage=base+view.getUint16(base+4);
+    for(let j=0;j<count;j++){
+      const r=base+6+j*12;if(view.getUint16(r+6)!==6)continue;
+      const platform=view.getUint16(r),length=view.getUint16(r+8),offset=storage+view.getUint16(r+10);
+      if(offset+length>bytes.length)continue;
+      const data=bytes.subarray(offset,offset+length);
+      let name='';
+      if(platform===0||platform===3){for(let k=0;k+1<data.length;k+=2)name+=String.fromCharCode(data[k]*256+data[k+1]);}
+      else if(platform===1)name=new TextDecoder('ascii').decode(data);
+      if(name){font.postScriptName=name;break;}
+    }
+    break;
+  }
+  if(!font.postScriptName)throw Error('字型沒有 PostScript 名稱，請改用其他字型');
+  return font;
+}

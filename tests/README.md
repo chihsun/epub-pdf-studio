@@ -19,3 +19,13 @@
 ## PDF 整頁轉圖局部測試
 
 以本機 HTTP 伺服器開啟 `tests/pdf-rasterization.html`，頁面應顯示 PASS。使用記憶體內合成的原生文字與圖片頁，驗證 Flate／JPEG、旋轉與裁切後尺寸、像素、六欄中的標題與作者保留、一般模式保留文字、DPI 驗證，以及開始前／轉圖中的取消。
+
+## 可編輯浮水印局部測試
+
+`node tests/editable-watermark.cjs`：使用隨附字型模擬上傳，驗證中文／英文、字型嵌入、XML 跳脫、頁面浮水印標記、首頁排除、繼承資源及命名衝突、文件屬性與加密；不啟動 PDF-XChange。
+
+以本機 HTTP 開啟 `tests/editable-watermark.html`：在真正的瀏覽器載入內建中文字型、產生可編輯文字浮水印，以 PDF.js 讀回中英文並繪製頁面，應顯示 PASS。這是簡易驗證，不代表 PDF-XChange 完整編修流程已驗證。
+
+## 浮水印輸出模式局部測試
+
+本機 HTTP 開啟 `tests/security-finishing.html`：透過 iframe 的實際浮水印 UI，處理記憶體內兩頁 PDF，驗證合併圖層模式移除新增浮水印文字／設定且保留原生文字、首頁排除、先加浮水印後整頁轉圖、先轉圖後保留可編修的中文浮水印、轉圖後加密、六欄中繼資料中的標題／作者、單獨轉圖與 JPEG、旋轉來源頁及轉圖取消。應顯示 PASS；不啟動 PDF-XChange。

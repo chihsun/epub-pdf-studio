@@ -189,6 +189,7 @@ function readFontMetrics(arrayBuffer) {
     return advancesCache.get(gid);
   };
   const fallback = new Set();
+  const advanceWidths=new Map();
   for(let i=0;i<segCount;i++) {
     const end=u16(endBase+i*2),start=u16(startBase+i*2),delta=i16(deltaBase+i*2),range=u16(rangeBase+i*2);
     for(let cp=start;cp<=end && cp<65535;cp++) {
@@ -203,14 +204,15 @@ function readFontMetrics(arrayBuffer) {
       }
       if(!gid) continue;
       cidMap[cp*2]=gid>>8;cidMap[cp*2+1]=gid&255;
-      widths.push(`${cp} [${Math.round(aw(gid)*1000/upm)}]`);
+      const advance=Math.round(aw(gid)*1000/upm);
+      widths.push(`${cp} [${advance}]`);advanceWidths.set(cp,advance);
       fallback.add(cp);
     }
   }
-  return {cidMap, widths:widths.join(' '), upm, ascender:i16(tables.hhea.offset+4), descender:i16(tables.hhea.offset+6), cmap:fallback};
+  return {cidMap, widths:widths.join(' '), advanceWidths, upm, ascender:i16(tables.hhea.offset+4), descender:i16(tables.hhea.offset+6), cmap:fallback};
 }
 
-export async function loadPdfFont(url) {
+export async function loadPdfFont(url,{family='EPUBStudioMing'}={}) {
   let buffer=url;
   if(!(url instanceof ArrayBuffer)){
     const response=await fetch(url);
@@ -218,11 +220,11 @@ export async function loadPdfFont(url) {
     buffer=await response.arrayBuffer();
   }
   const metrics=readFontMetrics(buffer);
-  const face=new FontFace('EPUBStudioMing',buffer,{style:'normal',weight:'400'});
+  const face=new FontFace(family,buffer,{style:'normal',weight:'400'});
   await face.load();
-  for(const existing of document.fonts)if(existing.family==='EPUBStudioMing')document.fonts.delete(existing);
+  for(const existing of document.fonts)if(existing.family===family)document.fonts.delete(existing);
   document.fonts.add(face);
-  return {bytes:new Uint8Array(buffer),metrics};
+  return {bytes:new Uint8Array(buffer),metrics,family};
 }
 
 function makeUnicodeCMap() {
@@ -230,6 +232,7 @@ function makeUnicodeCMap() {
 }
 
 export async function addEmbeddedFont(writer, font) {
+  const pdfName=Array.from(new TextEncoder().encode(font.postScriptName||'EPUBStudioMing'),byte=>/[A-Za-z0-9_.-]/.test(String.fromCharCode(byte))?String.fromCharCode(byte):'#'+byte.toString(16).padStart(2,'0')).join('');
   const descriptorId=writer.reserve();
   const cidFontId=writer.reserve();
   let fontBytes=font.bytes;
@@ -243,9 +246,9 @@ export async function addEmbeddedFont(writer, font) {
   const unicodeId=writer.stream(makeUnicodeCMap());
   const asc=Math.round(font.metrics.ascender/font.metrics.upm*1000);
   const desc=Math.round(font.metrics.descender/font.metrics.upm*1000);
-  writer.set(descriptorId,`<< /Type /FontDescriptor /FontName /EPUBStudioMing /Flags 4 /FontBBox [-1000 -1000 2000 2000] /ItalicAngle 0 /Ascent ${asc} /Descent ${desc} /CapHeight 900 /StemV 80 /MissingWidth 1000 /FontFile2 ${fontStreamId} 0 R >>`);
-  writer.set(cidFontId,`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /EPUBStudioMing /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descriptorId} 0 R /DW 1000 /W [ ${font.metrics.widths} ] /CIDToGIDMap ${gidMapId} 0 R >>`);
-  return writer.add(`<< /Type /Font /Subtype /Type0 /BaseFont /EPUBStudioMing /Encoding /Identity-H /DescendantFonts [${cidFontId} 0 R] /ToUnicode ${unicodeId} 0 R >>`);
+  writer.set(descriptorId,`<< /Type /FontDescriptor /FontName /${pdfName} /Flags 4 /FontBBox [-1000 -1000 2000 2000] /ItalicAngle 0 /Ascent ${asc} /Descent ${desc} /CapHeight 900 /StemV 80 /MissingWidth 1000 /FontFile2 ${fontStreamId} 0 R >>`);
+  writer.set(cidFontId,`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${pdfName} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descriptorId} 0 R /DW 1000 /W [ ${font.metrics.widths} ] /CIDToGIDMap ${gidMapId} 0 R >>`);
+  return writer.add(`<< /Type /Font /Subtype /Type0 /BaseFont /${pdfName} /Encoding /Identity-H /DescendantFonts [${cidFontId} 0 R] /ToUnicode ${unicodeId} 0 R >>`);
 }
 
 const MM = 72/25.4;
