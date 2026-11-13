@@ -1,6 +1,6 @@
 /* Versioned app shell and local-only dependencies; prior caches are retained. */
 importScripts('./pdfjs-assets.js');
-const CACHE='epub-pdf-studio-v1.7.11';
+const CACHE='epub-pdf-studio-v1.7.12';
 const ASSETS=['./','./index.html','./styles.css','./theme.css','./optimizer.css','./theme.js','./app.js','./pdf-metadata.js','./pdf-metadata.worker.js','./pdf-watermark.js','./pdf-watermark.worker.js','./pdf-security.js','./pdf-security.worker.js','./font-options.js','./font-formats.js','./vendor/woff2-encoder/decompress.js','./epub-reader.js','./epub-image-optimizer.js','./pdf-engine.js','./quality-presets.js','./pdf-optimizer.js','./pdf-optimizer.worker.js','./vendor/jszip.min.js','./vendor/qpdf/qpdf.js','./vendor/qpdf/qpdf.wasm','./fonts/reading-ming.ttf','./assets/icon.svg','./manifest.webmanifest'];
 ASSETS.push('./pdf-rasterizer.js','./pdfjs-assets.js',...self.PDFJS_ASSETS);
 self.addEventListener('install',event=>{
